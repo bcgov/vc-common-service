@@ -1,4 +1,4 @@
-import { ExecutionContext } from '@nestjs/common';
+import { ExecutionContext, NotImplementedException } from '@nestjs/common';
 
 import { TenantGuard } from './tenant.guard';
 
@@ -16,7 +16,7 @@ describe('TenantGuard', () => {
   it('should throw not implemented error (fail closed)', () => {
     const context = {} as ExecutionContext;
     expect(() => guard.canActivate(context)).toThrow(
-      'TenantGuard not implemented',
+      NotImplementedException,
     );
   });
 });
