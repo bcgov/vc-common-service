@@ -13,8 +13,10 @@ describe('JwtGuard', () => {
     expect(guard).toBeDefined();
   });
 
-  it('should return true (stub)', () => {
+  it('should throw not implemented error (fail closed)', () => {
     const context = {} as ExecutionContext;
-    expect(guard.canActivate(context)).toBe(true);
+    expect(() => guard.canActivate(context)).toThrow(
+      'JwtGuard not implemented',
+    );
   });
 });
