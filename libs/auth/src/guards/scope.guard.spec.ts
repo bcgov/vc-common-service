@@ -15,8 +15,6 @@ describe('ScopeGuard', () => {
 
   it('should throw not implemented error (fail closed)', () => {
     const context = {} as ExecutionContext;
-    expect(() => guard.canActivate(context)).toThrow(
-      NotImplementedException,
-    );
+    expect(() => guard.canActivate(context)).toThrow(NotImplementedException);
   });
 });
