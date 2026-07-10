@@ -3,6 +3,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
+import { PgBossService } from '../../../libs/pg-boss/src/pg-boss.service';
+
 import { AppModule } from './../src/app.module';
 
 describe('AppController (e2e)', () => {
@@ -11,7 +13,15 @@ describe('AppController (e2e)', () => {
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(PgBossService)
+      .useValue({
+        boss: {
+          start: jest.fn(),
+          stop: jest.fn(),
+        },
+      })
+      .compile();
 
     app = moduleFixture.createNestApplication();
     await app.init();
