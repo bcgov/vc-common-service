@@ -16,10 +16,10 @@ export class PgBossService implements OnModuleInit, OnModuleDestroy {
 
   public constructor(private readonly config: ConfigService) {}
 
-  public async onModuleInit() {
+  protected async createBoss(): Promise<PgBoss> {
     const { PgBoss } = await import('pg-boss');
 
-    this.boss = new PgBoss({
+    return new PgBoss({
       host: this.config.get<string>('DB_HOST', 'localhost'),
       port: parseInt(this.config.get<string>('DB_PORT', '5432'), 10),
       database: this.config.getOrThrow<string>('DB_NAME'),
@@ -31,6 +31,10 @@ export class PgBossService implements OnModuleInit, OnModuleDestroy {
         this.config.get<string>('DB_SSL_CA'),
       ),
     });
+  }
+
+  public async onModuleInit() {
+    this.boss = await this.createBoss();
 
     this.logger.log('Starting pg-boss...');
     await this.boss.start();
