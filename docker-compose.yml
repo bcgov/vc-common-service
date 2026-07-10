@@ -14,9 +14,22 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  migrate:
+    build:
+      context: .
+      target: deps
+    command: sh -c "npm run build && npm run migrate:up"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
 
   db:
-    image: postgres:16-alpine
+    image: postgres:18.4
     ports:
       - '5432:5432'
     environment:
@@ -24,7 +37,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: vc_common_service
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U postgres']
       interval: 5s
@@ -32,4 +45,4 @@ services:
       retries: 5
 
 volumes:
-  pgdata:
+  postgres-data:
