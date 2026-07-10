@@ -2,6 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { buildSslConfig } from './ssl.util';
+
 @Module({
   imports: [
     TypeOrmModule.forRootAsync({
@@ -14,8 +16,14 @@ import { TypeOrmModule } from '@nestjs/typeorm';
         password: config.getOrThrow<string>('DB_PASSWORD'),
         database: config.getOrThrow<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: config.get<string>('DB_SYNCHRONIZE') === 'true',
+        synchronize: false,
+        migrationsRun: false,
         logging: config.get<string>('DB_LOGGING') === 'true',
+        ssl: buildSslConfig(
+          config.get<string>('DB_SSL'),
+          config.get<string>('DB_SSL_REJECT_UNAUTHORIZED'),
+          config.get<string>('DB_SSL_CA'),
+        ),
       }),
       inject: [ConfigService],
     }),
