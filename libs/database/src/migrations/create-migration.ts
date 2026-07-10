@@ -162,8 +162,12 @@ async function createMigration(): Promise<void> {
   rl.close();
 }
 
-createMigration().catch((error) => {
-  process.stderr.write(`Error creating migration: ${getErrorMessage(error)}\n`);
-  rl.close();
-  process.exit(1);
-});
+if (require.main === module) {
+  createMigration().catch((error) => {
+    process.stderr.write(
+      `Error creating migration: ${getErrorMessage(error)}\n`,
+    );
+    rl.close();
+    process.exit(1);
+  });
+}

@@ -1,5 +1,3 @@
-// database/data-source.ts
-
 import { DataSource } from 'typeorm';
 
 import { InitialExtensions1783630501649 } from './migrations/000001_initial-extensions';

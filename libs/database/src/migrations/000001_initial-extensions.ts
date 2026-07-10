@@ -1,4 +1,3 @@
-// database/src/000001_initial-extensions.ts
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
 export const migrationName = 'InitialExtensions';
