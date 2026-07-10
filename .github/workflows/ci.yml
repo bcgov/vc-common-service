@@ -86,9 +86,8 @@ jobs:
       - run: npm run test:cov
       - name: Run e2e/integration tests
         run: npm run test:e2e
-      - name: Upload coverage
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Report coverage to Coveralls
+        uses: coverallsapp/github-action@v2
         with:
-          name: coverage
-          path: coverage/
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path-to-lcov: coverage/lcov.info
