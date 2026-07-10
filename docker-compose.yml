@@ -19,8 +19,6 @@ services:
       context: .
       target: deps
     command: sh -c "npm run build && npm run migrate:up"
-    ports:
-      - '3001:3001'
     volumes:
       - .:/app
       - /app/node_modules
