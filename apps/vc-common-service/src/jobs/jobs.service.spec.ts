@@ -1,6 +1,5 @@
+import { PgBossService } from '@app/pg-boss';
 import { Test, TestingModule } from '@nestjs/testing';
-
-import { PgBossService } from '../../../../libs/pg-boss/src/pg-boss.service';
 
 import { JobsService } from './jobs.service';
 

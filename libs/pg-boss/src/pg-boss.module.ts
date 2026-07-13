@@ -9,10 +9,10 @@ import { PgBossService } from './pg-boss.service';
     PgBossService,
     {
       provide: PG_BOSS,
-      useFactory: (service: PgBossService) => service.boss,
+      useFactory: (service: PgBossService) => service.initializeBoss(),
       inject: [PgBossService],
     },
   ],
-  exports: [PG_BOSS],
+  exports: [PgBossService, PG_BOSS],
 })
 export class PgBossModule {}

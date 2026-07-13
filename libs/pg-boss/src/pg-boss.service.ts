@@ -1,22 +1,17 @@
 import { buildSslConfig } from '@app/database/ssl.util';
-import {
-  Injectable,
-  Logger,
-  OnModuleDestroy,
-  OnModuleInit,
-} from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { PgBoss } from 'pg-boss';
 
 @Injectable()
-export class PgBossService implements OnModuleInit, OnModuleDestroy {
+export class PgBossService implements OnModuleDestroy {
   private readonly logger = new Logger(PgBossService.name);
 
   public boss!: PgBoss;
 
   public constructor(private readonly config: ConfigService) {}
 
-  protected async createBoss(): Promise<PgBoss> {
+  public async createBoss(): Promise<PgBoss> {
     const { PgBoss } = await import('pg-boss');
 
     return new PgBoss({
@@ -33,12 +28,13 @@ export class PgBossService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  public async onModuleInit() {
-    this.boss = await this.createBoss();
-
+  public async initializeBoss(): Promise<PgBoss> {
+    const boss = await this.createBoss();
+    this.boss = boss;
     this.logger.log('Starting pg-boss...');
-    await this.boss.start();
+    await boss.start();
     this.logger.log('pg-boss started');
+    return boss;
   }
 
   public async onModuleDestroy() {

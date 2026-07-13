@@ -27,7 +27,7 @@ describe('PgBossService', () => {
   });
 
   it('starts pg-boss on module init', async () => {
-    await service.onModuleInit();
+    await service.initializeBoss();
 
     expect(start).toHaveBeenCalledTimes(1);
     expect(service.boss).toBe(mockBoss);

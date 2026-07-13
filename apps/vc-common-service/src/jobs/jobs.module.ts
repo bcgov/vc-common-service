@@ -1,12 +1,12 @@
+import { PgBossModule } from '@app/pg-boss';
 import { Global, Module } from '@nestjs/common';
-
-import { PgBossService } from '../../../../libs/pg-boss/src/pg-boss.service';
 
 import { JobsService } from './jobs.service';
 
 @Global()
 @Module({
-  providers: [PgBossService, JobsService],
+  imports: [PgBossModule],
+  providers: [JobsService],
   exports: [JobsService],
 })
 export class JobsModule {}

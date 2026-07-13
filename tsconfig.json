@@ -26,7 +26,9 @@
       "@app/database": ["./libs/database/src"],
       "@app/database/*": ["./libs/database/src/*"],
       "@app/auth": ["./libs/auth/src"],
-      "@app/auth/*": ["./libs/auth/src/*"]
+      "@app/auth/*": ["./libs/auth/src/*"],
+      "@app/pg-boss": ["./libs/pg-boss/src"],
+      "@app/pg-boss/*": ["./libs/pg-boss/src/*"]
     }
   }
 }
