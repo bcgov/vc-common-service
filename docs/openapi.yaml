@@ -7,6 +7,14 @@ info:
     Normalizes issue/verify/hold patterns across credential formats (AnonCreds, SD-JWT, mDL, W3C VC) and
     back-end agents (Traction/ACA-Py, Credo Agent Service), exposing a single homogeneous REST API.
 
+    This API is organized into three distinct surfaces, each targeting a different audience:
+
+    | Surface | Audience | Auth |
+    |---|---|---|
+    | **Platform Administration** | Service operators | `platform-admin` role |
+    | **Tenant Management** | Tenant administrators | `tenants:admin` scope |
+    | **VC Operations** | Application developers / API consumers | Domain scopes (`credentials:offer`, `credentials:verify`, etc.) |
+
     ## Authentication
     All endpoints (except health checks and public discovery) require a Bearer JWT issued by the app's
     OIDC provider at `/oidc/token`. Tokens are obtained via:
@@ -25,6 +33,14 @@ info:
 
     ## Idempotency
     POST endpoints accept an `Idempotency-Key` header (UUIDv4) to prevent duplicate resource creation.
+
+    ## Error Responses
+    All authenticated endpoints may return:
+    - `401 Unauthorized` — token is missing, expired, or invalid
+    - `403 Forbidden` — token is valid but lacks the required scope or role
+
+    These are not repeated on each operation for brevity.
+    See `components/responses/Unauthorized` and `components/responses/Forbidden` for the schema.
   contact:
     name: BC Gov Digital Trust
   license:
@@ -37,43 +53,202 @@ servers:
   - url: http://localhost:3000
     description: Local development
 
+# ── Tag Groups (Redoc x-tagGroups) ─────────────────────────────────────
+# Organizes the sidebar into four audience-scoped surfaces.
+# Swagger UI ignores x-tagGroups; use Redoc for grouped rendering.
+x-tagGroups:
+  - name: "🔑 Authentication"
+    description: |
+      Token exchange and tenant context switching — obtain a tenant-scoped Bearer
+      token here before calling any tenant-scoped endpoint.
+    tags:
+      - Auth
+
+  - name: "🔧 Platform Administration"
+    description: |
+      Endpoints for **service operators** who manage the platform itself.
+      Requires the `platform-admin` role. Tenants are not permitted to call these endpoints.
+    tags:
+      - Health
+      - Tenants
+      - Admin
+
+  - name: "🏢 Tenant Management"
+    description: |
+      Endpoints for **tenant administrators** who configure their tenant's VC infrastructure.
+      Requires `tenants:admin` scope (or explicit domain scopes where noted).
+      These are setup/configuration operations — not runtime credential flows.
+    tags:
+      - Tenant Settings
+      - Tenant Users
+      - Connectors
+      - Credential Definitions
+      - Issuance Profiles
+      - Verification Profiles
+      - Clients
+      - Webhooks
+      - Logs
+      - Audit Logs
+      - Events
+
+  - name: "🔐 VC Operations"
+    description: |
+      Endpoints for **application developers and API consumers** performing runtime VC operations.
+      Requires domain scopes: `credentials:offer`, `credentials:verify`, `credentials:hold`,
+      `credentials:revoke`, `connections:manage`. Discovery endpoints are unauthenticated.
+    tags:
+      - Credentials
+      - Presentations
+      - Connections
+      - Operations
+      - Discovery
+      - Webhook Ingestion
+
 tags:
-  - name: Health
-    description: Liveness and readiness probes
+  # ── Authentication ──────────────────────────────────────────────────────
   - name: Auth
-    description: Authentication and tenant switching
+    description: |
+      Token exchange and tenant context switching.
+      **Audience**: All callers — obtain or switch a tenant-scoped Bearer token before
+      making any tenant-scoped API calls.
+      **Auth**: Active Bearer JWT required for `switch-tenant`.
+
+  # ── Platform Administration ────────────────────────────────────────────
+  - name: Health
+    description: |
+      Liveness and readiness probes.
+      **Audience**: Infrastructure / load balancers.
+      **Auth**: None required.
   - name: Tenants
-    description: Tenant lifecycle management
-  - name: Tenant Users
-    description: User membership and role management within a tenant
-  - name: Connectors
-    description: Backend agent connector credential management
-  - name: Credential Definitions
-    description: Schema and credential definition registry
-  - name: Issuance Profiles
-    description: Named, versioned issuance configurations
-  - name: Verification Profiles
-    description: Named, versioned verification templates
-  - name: Credentials
-    description: Credential issuance and holder operations
-  - name: Presentations
-    description: Presentation/proof request operations
-  - name: Connections
-    description: DIDComm/OID4VC peer connection management
-  - name: Operations
-    description: Async operation tracking and polling
-  - name: Webhooks
-    description: Tenant webhook registration and management
-  - name: Clients
-    description: OAuth2 API client registration
-  - name: Logs
-    description: Tenant-scoped log streaming and querying
-  - name: Discovery
-    description: Public OID4VCI-aligned profile discovery
+    description: |
+      Tenant lifecycle management: create, list, read, update, suspend, and delete tenants.
+      Tenant-level configuration and onboarding are in the Tenant Settings group.
+      **Audience**: Platform administrators (`platform-admin` role).
+      **Auth**: `platform-admin` role required for all mutating operations.
   - name: Admin
-    description: Platform administration endpoints
+    description: |
+      Platform-wide operational tooling: dead-letter queue management, session revocation,
+      global scope/role definitions, usage limit overrides, and bulk event replay.
+      **Audience**: Platform administrators (`platform-admin` role) only.
+      **Auth**: `platform-admin` role required for all endpoints in this group.
+
+  # ── Tenant Management ──────────────────────────────────────────────────
+  - name: Tenant Settings
+    description: |
+      Tenant-level self-management: onboarding workflow, tenant configuration,
+      usage monitoring, and role→scope customization within the tenant.
+      **Audience**: Tenant administrators.
+      **Auth**: `tenants:admin` scope.
+  - name: Tenant Users
+    description: |
+      Invite, list, update roles for, and remove users within a tenant.
+      **Audience**: Tenant administrators.
+      **Auth**: `tenants:admin` scope or `users:manage` scope.
+  - name: Connectors
+    description: |
+      Register and manage backend agent connector credentials (Traction, Credo).
+      Connectors are a prerequisite for all VC operations.
+      **Audience**: Tenant administrators.
+      **Auth**: `tenants:admin` scope.
+  - name: Credential Definitions
+    description: |
+      Register credential schemas and definitions with the backend agent.
+      Credential definitions are the low-level foundation that Issuance Profiles wrap.
+      **Audience**: Tenant administrators (setup step — API consumers use profiles, not definitions directly).
+      **Auth**: `tenants:admin` scope.
+  - name: Issuance Profiles
+    description: |
+      Create, publish, and deprecate named/versioned issuance configurations.
+      Profiles abstract credential format, schema, and protocol behind a stable identifier
+      consumed by VC Operations (`credentials:offer`).
+      **Audience**: Tenant administrators.
+      **Auth**: `profiles:manage` scope (implied by `tenants:admin`).
+  - name: Verification Profiles
+    description: |
+      Create, publish, and deprecate named/versioned verification templates.
+      Templates define the presentation definition consumed by VC Operations (`credentials:verify`).
+      **Audience**: Tenant administrators.
+      **Auth**: `profiles:manage` scope (implied by `tenants:admin`).
+  - name: Clients
+    description: |
+      Register and manage OAuth2 API clients for service-to-service (`client_credentials`) access.
+      Secrets are returned once at creation and are never retrievable again.
+      **Audience**: Tenant administrators.
+      **Auth**: `clients:manage` scope (implied by `tenants:admin`).
+  - name: Webhooks
+    description: |
+      Register, list, and delete webhook endpoints that receive async VC event notifications.
+      Events: `credential.issued`, `credential.verified`, `credential.accepted`,
+      `credential.rejected`, `credential.revoked`, `connection.established`.
+      **Audience**: Tenant administrators.
+      **Auth**: `tenants:admin` scope.
+  - name: Logs
+    description: |
+      Tenant-scoped structured log streaming (SSE) and querying backed by Loki.
+      Provides a secure proxy over raw agent logs without exposing infrastructure details.
+      **Audience**: Tenant administrators.
+      **Auth**: `logs:read` scope.
+  - name: Audit Logs
+    description: |
+      Append-only audit trail for all credential operations and admin actions within a tenant.
+      Supports filtered queries and CSV export for compliance reporting.
+      **Audience**: Tenant administrators.
+      **Auth**: `logs:read` scope.
+
+  - name: Events
+    description: |
+      Tenant-scoped view of the async job queue: list and replay failed (dead-letter) jobs
+      that belong to this tenant.
+      Provides self-service recovery for failed credential state updates, webhook deliveries,
+      and other async operations without requiring platform-admin intervention.
+      Server filters all results to `tenant_id` from the JWT — callers cannot access other tenants' jobs.
+      **Audience**: Tenant administrators.
+      **Auth**: `tenants:admin` scope.
+
+  # ── VC Operations ──────────────────────────────────────────────────────
+  - name: Credentials
+    description: |
+      Issue, batch-issue, accept, reject, revoke, and query credentials.
+      Supports both DIDComm (connection-based) and OID4VCI (connectionless) delivery modes.
+      Mutating operations return `202 Accepted` with an `Operation` resource; use the
+      Operations group to poll for completion or register webhooks.
+      **Audience**: Application developers / API consumers.
+      **Auth**: `credentials:offer` (issuance), `credentials:revoke` (revocation),
+      `credentials:hold` (holder accept/reject).
+  - name: Presentations
+    description: |
+      Request and verify credential presentations (proof requests).
+      Supports AnonCreds proof requests and DIF Presentation Exchange (OID4VP).
+      Async — returns an `Operation` resource; poll or use webhooks for result.
+      **Audience**: Application developers / API consumers.
+      **Auth**: `credentials:verify` scope.
+  - name: Connections
+    description: |
+      Create and manage DIDComm / OID4VC peer connections.
+      A connection is required for DIDComm-based issuance and verification;
+      OID4VCI/VP flows are connectionless.
+      **Audience**: Application developers / API consumers.
+      **Auth**: `connections:manage` scope.
+  - name: Operations
+    description: |
+      Track and poll async operations created by Credentials, Presentations, and Connections.
+      All mutating VC operations return a reference to an Operation resource here.
+      **Audience**: Application developers / API consumers.
+      **Auth**: Any valid tenant-scoped Bearer JWT.
+  - name: Discovery
+    description: |
+      Public, unauthenticated OID4VCI-aligned discovery endpoints.
+      Wallets and external verifiers use these to find published issuance/verification profiles
+      without requiring a Bearer token.
+      **Audience**: External wallets, verifiers, and public clients.
+      **Auth**: None required.
   - name: Webhook Ingestion
-    description: Inbound webhook receivers from backend agents
+    description: |
+      Inbound webhook receivers for async state updates from backend agents
+      (Traction/ACA-Py, Credo Agent Service).
+      Authenticated via HMAC shared secret — not a Bearer JWT.
+      **Audience**: Internal — called by backend agents only, not by API consumers.
+      **Auth**: `X-Traction-Signature` HMAC header.
 
 security:
   - BearerAuth: []
@@ -280,7 +455,7 @@ paths:
     patch:
       operationId: updateTenantConfig
       summary: Update tenant configuration
-      tags: [Tenants]
+      tags: [Tenant Settings]
       requestBody:
         required: true
         content:
@@ -301,7 +476,7 @@ paths:
     get:
       operationId: getOnboardingStatus
       summary: Get tenant onboarding progress
-      tags: [Tenants]
+      tags: [Tenant Settings]
       responses:
         "200":
           description: Onboarding status
@@ -338,7 +513,7 @@ paths:
     post:
       operationId: completeOnboardingStep
       summary: Mark an onboarding step as complete
-      tags: [Tenants]
+      tags: [Tenant Settings]
       responses:
         "200":
           description: Step marked complete
@@ -375,7 +550,7 @@ paths:
     post:
       operationId: skipOnboardingStep
       summary: Skip an onboarding step (mark as skipped)
-      tags: [Tenants]
+      tags: [Tenant Settings]
       responses:
         "200":
           description: Step marked skipped
@@ -407,7 +582,7 @@ paths:
       operationId: resetOnboarding
       summary: Reset onboarding progress (testing/demo only)
       description: Clears all onboarding step progress and allows restart. Intended for development and testing scenarios.
-      tags: [Tenants]
+      tags: [Tenant Settings]
       responses:
         "200":
           description: Onboarding progress reset
@@ -1128,6 +1303,10 @@ paths:
         schema:
           type: string
           format: uuid
+        description: >
+          The `id` (Operation UUID) returned by `POST /credentials/offer`.
+          This is **not** the persisted Credential record UUID—that is used by
+          `GET /credentials/{credentialId}` and `POST /credentials/{credentialId}/revoke`.
     post:
       operationId: acceptCredential
       summary: Accept a credential offer (holder)
@@ -1157,6 +1336,9 @@ paths:
         schema:
           type: string
           format: uuid
+        description: >
+          The `id` (Operation UUID) returned by `POST /credentials/offer`.
+          This is **not** the persisted Credential record UUID.
     post:
       operationId: rejectCredential
       summary: Reject a credential offer (holder)
@@ -1963,7 +2145,7 @@ paths:
         Retrieve structured audit log records for the tenant.
         Audit logs track business actions (issue, verify, revoke, create, update, delete, login, token_grant)
         and are stored in PostgreSQL (separate from operational Loki logs).
-      tags: [Logs]
+      tags: [Audit Logs]
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
@@ -2030,7 +2212,7 @@ paths:
     get:
       operationId: getAuditLogEntry
       summary: Get audit log entry detail
-      tags: [Logs]
+      tags: [Audit Logs]
       responses:
         "200":
           description: Audit log entry with full metadata
@@ -2048,7 +2230,7 @@ paths:
       operationId: exportAuditLogs
       summary: Export audit logs as CSV
       description: Returns audit log entries matching the filters as a downloadable CSV file.
-      tags: [Logs]
+      tags: [Audit Logs]
       parameters:
         - name: action
           in: query
@@ -2131,11 +2313,21 @@ paths:
   /api/v1/admin/events/dead-letter:
     get:
       operationId: listDeadLetterJobs
-      summary: List dead-letter (failed) jobs
+      summary: List dead-letter (failed) jobs (platform-admin, all tenants)
+      description: |
+        Returns all dead-letter jobs across every tenant. Provides cross-tenant visibility
+        for platform operators.
+        For tenant-scoped self-service recovery, see `GET /tenants/{tenantId}/events/dead-letter`.
       tags: [Admin]
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
+        - name: tenant_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Optional filter by tenant (platform-admin can filter to a specific tenant)
       responses:
         "200":
           description: Failed jobs list
@@ -2172,7 +2364,11 @@ paths:
           type: string
     post:
       operationId: replayDeadLetterJob
-      summary: Replay a dead-letter job
+      summary: Replay a dead-letter job (platform-admin)
+      description: |
+        Re-enqueues any dead-letter job by ID regardless of tenant ownership.
+        For tenant-scoped replay with ownership validation, see
+        `POST /tenants/{tenantId}/events/dead-letter/{jobId}/replay`.
       tags: [Admin]
       responses:
         "202":
@@ -2294,7 +2490,7 @@ paths:
       description: |
         Override default role→scope mappings for a specific tenant.
         Role hierarchy is enforced: cannot assign a scope to a child role that the parent doesn't have.
-      tags: [Admin]
+      tags: [Tenant Settings]
       requestBody:
         required: true
         content:
@@ -2337,7 +2533,7 @@ paths:
     get:
       operationId: getTenantUsage
       summary: Get tenant usage statistics
-      tags: [Admin]
+      tags: [Tenant Settings]
       responses:
         "200":
           description: Usage data
@@ -2352,7 +2548,7 @@ paths:
                     type: integer
                   connections_active:
                     type: integer
-                  storage_used_mb:
+                  storage_mb:
                     type: number
 
   /api/v1/tenants/{tenantId}/usage/reset-counters:
@@ -2703,15 +2899,30 @@ components:
           type: string
           format: uuid
           nullable: true
-        webhook_url:
-          type: string
-          format: uri
-          nullable: true
-          deprecated: true
-          description: "Deprecated: use webhook registrations (AG-05) instead"
         features:
           type: object
           description: Feature flags (key-value)
+        rate_limits:
+          type: object
+          readOnly: true
+          description: |
+            Active per-tenant rate limit overrides. Populated when a platform-admin
+            has called `PATCH /usage/limits`; absent when platform defaults apply.
+          properties:
+            api_calls_per_minute:
+              type: integer
+              nullable: true
+            credentials_per_day:
+              type: integer
+              nullable: true
+            storage_mb:
+              type: integer
+              nullable: true
+            expires_at:
+              type: string
+              format: date-time
+              nullable: true
+              description: When this override expires (null = permanent)
         operation_ttl:
           type: object
           properties:
@@ -3298,15 +3509,29 @@ components:
         id:
           type: string
           format: uuid
+        batch_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            UUID of the parent batch operation. Present only on child operations
+            created by a batch issuance or revocation request (`credential.offer-batch`,
+            `credential.revoke-batch`). Use this to navigate to the parent via
+            `GET /operations/{batch_id}`.
         type:
           type: string
-          description: "Operation type (e.g., credential.offer, presentation.request, credential.offer-batch)"
+          description: |
+            Operation type. Known values:
+            `credential.offer`, `credential.offer-batch`,
+            `credential.revoke`, `credential.revoke-batch`,
+            `presentation.request`, `connection.create`
           examples:
             - credential.offer
             - credential.offer-batch
+            - credential.revoke
+            - credential.revoke-batch
             - presentation.request
             - connection.create
-            - credential.revoke
         state:
           $ref: "#/components/schemas/OperationState"
         created_at:
@@ -3537,6 +3762,50 @@ components:
         created_at:
           type: string
           format: date-time
+
+    # ─── Tenant Dead-letter Job ────────────────────────────────────
+    TenantDeadLetterJob:
+      type: object
+      description: |
+        A pg-boss dead-letter job scoped to the authenticated tenant.
+        The `data` object is redacted of any sensitive fields (connector secrets, raw credentials)
+        before being returned — only correlation IDs and error context are exposed.
+      required: [id, queue, failed_at, error]
+      properties:
+        id:
+          type: string
+          description: pg-boss job UUID
+        queue:
+          type: string
+          enum: [credential.state-update, webhook.dispatch, audit.write, credential.bulk-item]
+          description: The queue this job belonged to
+        failed_at:
+          type: string
+          format: date-time
+          description: Timestamp of the final failure (after all retries exhausted)
+        error:
+          type: string
+          description: Error message from the last failed attempt
+        retry_count:
+          type: integer
+          description: Number of attempts made before the job entered dead-letter
+        correlation:
+          type: object
+          description: Safe correlation identifiers extracted from the job payload
+          properties:
+            operation_id:
+              type: string
+              format: uuid
+              nullable: true
+            external_id:
+              type: string
+              nullable: true
+              description: Agent exchange ID (credential_exchange_id, presentation_exchange_id, etc.)
+            webhook_id:
+              type: string
+              format: uuid
+              nullable: true
+              description: Webhook registration ID (for webhook.dispatch jobs)
 
     # ─── Log Entry ───────────────────────────────────────────────────
     LogEntry:
