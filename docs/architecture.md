@@ -256,6 +256,55 @@ The API uses a **hybrid** approach for identifying credential format and backend
 | **Protocol (DIDComm vs OID4VCI)** | Presence/absence of `connection_id` | DIDComm needs an existing connection; OID4VCI is connectionless |
 | **Backend override** | Query param `?adapter=traction` | Escape hatch for platform-admins; optional, ignored in v1 MVP |
 
+### API Documentation Strategy (Multi-Document)
+
+The API is organized into three audience-scoped surfaces. A single NestJS application generates
+three separate OpenAPI documents at runtime using `SwaggerModule.createDocument` with `include:`
+filters — one document per surface, all from the same codebase.
+
+| Surface | Swagger UI | Raw JSON | Audience |
+|---|---|---|---|
+| **Platform Administration** | `/api/docs/admin` | `/api/docs/admin/json` | Platform operators |
+| **Tenant Management** | `/api/docs/tenant` | `/api/docs/tenant/json` | Tenant administrators |
+| **VC Operations** | `/api/docs/vc` | `/api/docs/vc/json` | App developers / API consumers |
+
+Each document includes only the NestJS modules relevant to that audience:
+
+```typescript
+// main.ts (simplified)
+const adminDoc = SwaggerModule.createDocument(app, adminConfig, {
+  include: [HealthModule, TenantsModule, AdminModule, AuthModule],
+});
+SwaggerModule.setup('api/docs/admin', app, adminDoc);
+
+const tenantDoc = SwaggerModule.createDocument(app, tenantConfig, {
+  include: [
+    TenantSettingsModule, TenantUsersModule, ConnectorsModule,
+    CredentialDefinitionsModule, ProfilesModule, ClientsModule,
+    WebhooksModule, LogsModule, AuditLogsModule, EventsModule,
+  ],
+});
+SwaggerModule.setup('api/docs/tenant', app, tenantDoc);
+
+const vcDoc = SwaggerModule.createDocument(app, vcConfig, {
+  include: [
+    CredentialsModule, PresentationsModule, ConnectionsModule,
+    OperationsModule, DiscoveryModule, WebhookIngestionModule,
+  ],
+});
+SwaggerModule.setup('api/docs/vc', app, vcDoc);
+```
+
+Shared component schemas (`$ref` targets) are included automatically by `@nestjs/swagger`
+whenever they are referenced by an included module — no manual deduplication needed.
+
+Swagger UI endpoints are disabled in production (`SWAGGER_ENABLED=false`). The raw JSON endpoints
+can be kept enabled separately (`SWAGGER_JSON_ENABLED=true`) for client codegen pipelines.
+
+The hand-authored `openapi.yaml` in this repository is the **design-time source of truth**.
+Generated specs from the running app should be structurally equivalent to it; divergence
+indicates a missing `@Api*` decorator on a controller or DTO.
+
 **Example endpoints (prescriptive naming):**
 
 ```
@@ -744,6 +793,34 @@ graph LR
     CSU -.->|after retryLimit| DLQ
     BLK -.->|after retryLimit| DLQ
     WDQ -.->|after retryLimit| DLQ
+```
+
+### Dead-letter Access Model
+
+The dead-letter queue is a single PostgreSQL-backed table (`pgboss.job WHERE state = 'failed'`), but
+access is split by audience to enforce tenant isolation:
+
+| Endpoint | Audience | Scope | Behaviour |
+|---|---|---|---|
+| `GET /api/v1/admin/events/dead-letter` | Platform Admin | `platform-admin` role | Returns ALL failed jobs; optional `?tenant_id` filter |
+| `POST /api/v1/admin/events/dead-letter/:id/replay` | Platform Admin | `platform-admin` role | Replays any job by ID; no ownership check |
+| `POST /api/v1/admin/events/dead-letter/replay-bulk` | Platform Admin | `platform-admin` role | Bulk replay by date range / queue across all tenants |
+| `GET /api/v1/tenants/{tenantId}/events/dead-letter` | Tenant Admin | `tenants:admin` scope | Returns only jobs where `job.data.tenant_id = jwt.tenant_id` |
+| `POST /api/v1/tenants/{tenantId}/events/dead-letter/:id/replay` | Tenant Admin | `tenants:admin` scope | Validates ownership before `boss.resume(id)` — returns 404 if not owned |
+
+**Why not expose raw job data to tenants:**
+The `data` column in `pgboss.job` can contain sensitive fields (connector auth tokens, raw credential
+attributes passed to the agent). The tenant-scoped endpoints return a `TenantDeadLetterJob` projection
+that redacts everything except correlation IDs (`operation_id`, `external_id`, `webhook_id`) and the
+error message. This is sufficient for tenant admins to identify *what* failed without exposing
+system internals.
+
+**PostgreSQL index required for tenant filtering:**
+```sql
+-- GIN index on JSONB data column for tenant_id path filtering
+CREATE INDEX idx_pgboss_job_tenant_id ON pgboss.job USING GIN ((data -> 'tenant_id'));
+-- Or a functional B-tree index if queries always filter by exact tenant_id string:
+CREATE INDEX idx_pgboss_job_tenant_id_btree ON pgboss.job ((data->>'tenant_id')) WHERE state = 'failed';
 ```
 
 ### Bulk Operations
