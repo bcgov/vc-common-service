@@ -1,5 +1,4 @@
 import * as fs from 'fs';
-import * as path from 'path';
 
 jest.mock('fs');
 jest.mock('readline');
@@ -71,26 +70,26 @@ describe('create-migration', () => {
     });
 
     it('should return 1 when no migrations exist', () => {
-      mockFs.readdirSync.mockReturnValue([]);
+      (mockFs.readdirSync as jest.Mock).mockReturnValue([]);
       const result = getNextMigrationNumber('/migrations');
       expect(result).toBe(1);
     });
 
     it('should return next number after highest existing migration', () => {
-      mockFs.readdirSync.mockReturnValue([
+      (mockFs.readdirSync as jest.Mock).mockReturnValue([
         '000001_initial.ts',
         '000002_add-users.ts',
-      ] as any);
+      ]);
       const result = getNextMigrationNumber('/migrations');
       expect(result).toBe(3);
     });
 
     it('should ignore non-migration files', () => {
-      mockFs.readdirSync.mockReturnValue([
+      (mockFs.readdirSync as jest.Mock).mockReturnValue([
         '000001_initial.ts',
         'random-file.ts',
         '000003_test.ts',
-      ] as any);
+      ]);
       const result = getNextMigrationNumber('/migrations');
       expect(result).toBe(4);
     });
@@ -146,13 +145,17 @@ export const AppDataSource = new DataSource({`;
     it('should add migration to existing migrations', () => {
       const source = 'migrations: [ExistingMigration456]';
       const result = addMigrationToArray(source, 'NewMigration789');
-      expect(result).toBe('migrations: [ExistingMigration456, NewMigration789]');
+      expect(result).toBe(
+        'migrations: [ExistingMigration456, NewMigration789]',
+      );
     });
 
     it('should handle multiple existing migrations', () => {
       const source = 'migrations: [Migration1, Migration2, Migration3]';
       const result = addMigrationToArray(source, 'Migration4');
-      expect(result).toBe('migrations: [Migration1, Migration2, Migration3, Migration4]');
+      expect(result).toBe(
+        'migrations: [Migration1, Migration2, Migration3, Migration4]',
+      );
     });
 
     it('should handle migrations array with whitespace', () => {
