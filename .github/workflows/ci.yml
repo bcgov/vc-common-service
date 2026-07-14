@@ -91,3 +91,27 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path-to-lcov: coverage/lcov.info
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+      - name: Helm lint
+        working-directory: charts
+        run: |
+          helm lint vc-common-service
+          helm lint vc-common-service -f vc-common-service/ci/ci-values.yaml
+          for env in dev test prod; do
+            helm lint vc-common-service -f vc-common-service/values-$env.yaml
+          done
+      - name: Helm template (render all values files)
+        working-directory: charts
+        run: |
+          helm template ci vc-common-service -f vc-common-service/ci/ci-values.yaml > /dev/null
+          for env in dev test prod; do
+            helm template rel vc-common-service -f vc-common-service/values-$env.yaml > /dev/null
+          done

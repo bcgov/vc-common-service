@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "vc-common-service.fullname" . }}-test-connection"
+  labels:
+    {{- include "vc-common-service.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+spec:
+  restartPolicy: Never
+  containers:
+    - name: wget
+      image: busybox
+      command: ['wget']
+      args:
+        - '--spider'
+        - '-S'
+        - '{{ include "vc-common-service.fullname" . }}:{{ .Values.service.port }}/health/live'

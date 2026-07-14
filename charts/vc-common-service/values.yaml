@@ -1,0 +1,284 @@
+# Default values for vc-common-service.
+# Deploys the VC Common Service (NestJS) to BC Gov OpenShift.
+# This is a YAML-formatted file. Values here are safe defaults for a generic
+# environment; per-environment overrides live in values-{dev,test,prod}.yaml.
+
+# -- Number of API pod replicas (ignored when autoscaling.enabled=true).
+replicaCount: 1
+
+nameOverride: ""
+fullnameOverride: ""
+
+# -----------------------------------------------------------------------------
+# Container image
+# API, Worker and the migrations init container all share the same image and are
+# differentiated only by their entrypoint command (see docs/architecture.md).
+# -----------------------------------------------------------------------------
+image:
+  registry: ghcr.io
+  repository: bcgov/vc-common-service
+  pullPolicy: IfNotPresent
+  # Overrides the image tag; defaults to the chart appVersion when empty.
+  tag: ""
+
+# Names of pre-created imagePullSecrets, e.g. [{ name: my-registry }].
+imagePullSecrets: []
+
+# -----------------------------------------------------------------------------
+# ServiceAccount
+# -----------------------------------------------------------------------------
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+# -----------------------------------------------------------------------------
+# Pod / container metadata & security
+# -----------------------------------------------------------------------------
+podAnnotations: {}
+podLabels: {}
+
+# NOTE: On BC Gov OpenShift the restricted-v2 SCC assigns UID/fsGroup/SELinux
+# from the namespace range automatically. Leave these empty unless you must pin
+# values. Do NOT set runAsUser to an arbitrary UID — it will be rejected.
+podSecurityContext: {}
+  # fsGroup: 2000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  runAsNonRoot: true
+  capabilities:
+    drop:
+      - ALL
+
+# -----------------------------------------------------------------------------
+# Service
+# The app listens on container port 3000 (see .env.example / main.ts).
+# -----------------------------------------------------------------------------
+service:
+  type: ClusterIP
+  # Service port exposed to the cluster.
+  port: 8080
+  # Container port the NestJS app binds to (PORT env).
+  targetPort: 3000
+
+# -----------------------------------------------------------------------------
+# OpenShift Route (default exposure mechanism on BC Gov clusters)
+# -----------------------------------------------------------------------------
+route:
+  enabled: true
+  # Hostname for the route. Leave empty to let OpenShift generate one.
+  host: ""
+  # Optional explicit path.
+  path: ""
+  annotations: {}
+  # haproxy.router.openshift.io/timeout: 60s
+  tls:
+    enabled: true
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  # wildcardPolicy: None
+
+# -----------------------------------------------------------------------------
+# Kubernetes Ingress (optional alternative to Route; disabled by default)
+# -----------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# -----------------------------------------------------------------------------
+# Resource requests & limits for the API container.
+# -----------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+# -----------------------------------------------------------------------------
+# Probes. IN-01 provides a minimal 200 at /health/live; /health/ready is added
+# by OB-06 (dependency checks) later. Ports reference the named container port.
+# -----------------------------------------------------------------------------
+livenessProbe:
+  httpGet:
+    path: /health/live
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 15
+  timeoutSeconds: 3
+  failureThreshold: 3
+readinessProbe:
+  httpGet:
+    path: /health/ready
+    port: http
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# -----------------------------------------------------------------------------
+# Horizontal Pod Autoscaler for the API Deployment.
+# -----------------------------------------------------------------------------
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+
+# -----------------------------------------------------------------------------
+# Database migrations.
+# Run as an init container in the API pod (same image, overridden command).
+# Disabled by default until migration scripts / the runner command exist.
+# -----------------------------------------------------------------------------
+migrations:
+  enabled: false
+  # Command + args used to run migrations. Adjust to the project's runner.
+  command:
+    - node
+  args:
+    - dist/apps/vc-common-service/src/migrate.js
+  resources:
+    requests:
+      cpu: 25m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# -----------------------------------------------------------------------------
+# Worker deployment (pg-boss queue consumers).
+# Same image as the API, different entrypoint. Has its own HPA.
+# Disabled by default until dist/worker.js exists.
+# -----------------------------------------------------------------------------
+worker:
+  enabled: false
+  replicaCount: 1
+  # Entrypoint for the worker process.
+  command:
+    - node
+  args:
+    - dist/worker.js
+  podAnnotations: {}
+  podLabels: {}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  # Liveness probe for the worker (no HTTP server by default -> process check).
+  livenessProbe: {}
+  # Independent autoscaler for the worker.
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    # targetMemoryUtilizationPercentage: 80
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# -----------------------------------------------------------------------------
+# Non-secret application configuration -> rendered into a ConfigMap and injected
+# as environment variables. Add any non-sensitive env the app reads here.
+# -----------------------------------------------------------------------------
+config:
+  NODE_ENV: production
+  PORT: "3000"
+  LOG_LEVEL: info
+  # External PostgreSQL (credentials come from the Secret, not here).
+  DB_HOST: ""
+  DB_PORT: "5432"
+  DB_NAME: vc_common_service
+  DB_SYNCHRONIZE: "false"
+  DB_LOGGING: "false"
+
+# Extra plain env vars appended verbatim to every container (list of name/value).
+extraEnv: []
+# Extra envFrom sources (configMapRef/secretRef) for every container.
+extraEnvFrom: []
+
+# -----------------------------------------------------------------------------
+# Secrets.
+# By default the chart references a pre-provisioned Secret (recommended on BC Gov
+# OpenShift, where secrets are managed out-of-band). Set create=true to have the
+# chart generate/persist secret values instead.
+# -----------------------------------------------------------------------------
+secret:
+  # Name of an existing Secret to consume. When empty and create=true, the chart
+  # creates a Secret named "<fullname>-secret".
+  existingSecret: ""
+  # Create a chart-managed Secret from the values below (generated once, then
+  # preserved across upgrades via the getOrGenerate pattern).
+  create: false
+  # Keep the generated Secret when the release is uninstalled.
+  retainOnUninstall: true
+  # Non-generated key/values to place into the chart-managed Secret.
+  data:
+    DB_USERNAME: ""
+    DB_PASSWORD: ""
+  # Keys auto-generated when missing (length in chars). Useful for signing/HMAC.
+  generated:
+    # JWT_SIGNING_KEY: 64
+    # WEBHOOK_HMAC_SECRET: 48
+    # ENCRYPTION_KEY: 32
+    {}
+
+# -----------------------------------------------------------------------------
+# NetworkPolicy. Restricts ingress to the OpenShift router and declares explicit
+# inter-service communication (API/Worker -> Postgres, API -> Keycloak).
+# -----------------------------------------------------------------------------
+networkPolicy:
+  enabled: true
+  # Allow DNS egress. Required whenever database/keycloak egress rules are on,
+  # otherwise cluster DNS lookups are implicitly denied. Cluster DNS listens on
+  # port 53 (UDP/TCP).
+  dnsEgress:
+    enabled: true
+    port: 53
+  # Allow ingress to the API from the OpenShift router (route traffic).
+  ingress:
+    enabled: true
+    # OpenShift labels the router namespace with this. Override if your cluster
+    # uses a different selector.
+    routerNamespaceSelector:
+      policy-group.network.openshift.io/ingress: ""
+  # Allow API/Worker pods to reach the PostgreSQL database.
+  database:
+    enabled: true
+    # Port the database listens on.
+    port: 5432
+    # Selector matching the database pods (leave empty to allow all egress on
+    # the port within the namespace).
+    podSelector: {}
+    namespaceSelector: {}
+  # Allow the API to reach Keycloak (upstream IdP). Egress rule.
+  keycloak:
+    enabled: false
+    port: 443
+    namespaceSelector: {}
+    podSelector: {}
+
+# -----------------------------------------------------------------------------
+# Extra volumes / mounts (applied to the API pod).
+# -----------------------------------------------------------------------------
+volumes: []
+volumeMounts: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
