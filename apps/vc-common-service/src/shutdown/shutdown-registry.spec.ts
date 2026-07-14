@@ -54,7 +54,7 @@ describe('ShutdownRegistry', () => {
       expect(participants).toEqual([]);
     });
 
-    it('should return participants sorted by order in ascending order', () => {
+    it('should return participants sorted by order in descending order (highest priority first)', () => {
       const participant3: ShutdownParticipant = {
         order: 3,
         name: 'Third',
@@ -78,7 +78,7 @@ describe('ShutdownRegistry', () => {
       registry.register(participant2);
 
       const participants = registry.getParticipants();
-      expect(participants).toEqual([participant1, participant2, participant3]);
+      expect(participants).toEqual([participant3, participant2, participant1]);
     });
 
     it('should handle participants with the same order', () => {
@@ -120,8 +120,8 @@ describe('ShutdownRegistry', () => {
       registry.register(participant1);
 
       const participants = registry.getParticipants();
-      expect(participants[0]).toBe(participant1);
-      expect(participants[1]).toBe(participant2);
+      expect(participants[0]).toBe(participant2);
+      expect(participants[1]).toBe(participant1);
     });
 
     it('should return a new array, not the original', () => {

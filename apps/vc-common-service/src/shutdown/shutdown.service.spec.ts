@@ -85,9 +85,9 @@ describe('GracefulShutdownService', () => {
       await service.beforeApplicationShutdown();
 
       expect(callOrder).toEqual([
-        'Participant3',
-        'Participant1',
         'Participant2',
+        'Participant1',
+        'Participant3',
       ]);
     });
 

@@ -3,7 +3,7 @@ import { Injectable } from '@nestjs/common';
 // Interface for components that participate in the shutdown process
 export interface ShutdownParticipant {
   /**
-   * Lower numbers shut down first.
+   * Higher numbers shut down first (higher priority).
    */
   readonly order: number;
 
@@ -28,6 +28,6 @@ export class ShutdownRegistry {
   }
 
   public getParticipants(): readonly ShutdownParticipant[] {
-    return [...this.participants].sort((a, b) => a.order - b.order);
+    return [...this.participants].sort((a, b) => b.order - a.order);
   }
 }
