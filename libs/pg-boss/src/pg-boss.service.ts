@@ -1,10 +1,10 @@
 import { buildSslConfig } from '@app/database/ssl.util';
-import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { PgBoss } from 'pg-boss';
 
 @Injectable()
-export class PgBossService implements OnModuleDestroy {
+export class PgBossService {
   private readonly logger = new Logger(PgBossService.name);
 
   public boss!: PgBoss;
@@ -35,14 +35,5 @@ export class PgBossService implements OnModuleDestroy {
     await boss.start();
     this.logger.log('pg-boss started');
     return boss;
-  }
-
-  public async onModuleDestroy() {
-    if (!this.boss) {
-      return;
-    }
-
-    this.logger.log('Stopping pg-boss...');
-    await this.boss.stop();
   }
 }
