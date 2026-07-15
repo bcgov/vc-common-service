@@ -133,11 +133,11 @@ stays in sync.
 {{- define "vc-common-service.envFrom" -}}
 - configMapRef:
     name: {{ include "vc-common-service.configMapName" . }}
-{{- if or .Values.secret.existingSecret .Values.secret.create }}
+{{ if or .Values.secret.existingSecret .Values.secret.create }}
 - secretRef:
     name: {{ include "vc-common-service.secretName" . }}
-{{- end }}
-{{- with .Values.extraEnvFrom }}
-{{- toYaml . }}
-{{- end }}
+{{ end }}
+{{ with .Values.extraEnvFrom }}
+{{ toYaml . }}
+{{ end }}
 {{- end }}
