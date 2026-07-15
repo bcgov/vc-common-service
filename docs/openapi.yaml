@@ -1,0 +1,3876 @@
+openapi: 3.1.0
+info:
+  title: VC Common Service API
+  version: 1.0.0
+  description: |
+    Multi-tenant API providing a format-agnostic abstraction layer for Verifiable Credential (VC) operations.
+    Normalizes issue/verify/hold patterns across credential formats (AnonCreds, SD-JWT, mDL, W3C VC) and
+    back-end agents (Traction/ACA-Py, Credo Agent Service), exposing a single homogeneous REST API.
+
+    This API is organized into three distinct surfaces, each targeting a different audience:
+
+    | Surface | Audience | Auth |
+    |---|---|---|
+    | **Platform Administration** | Service operators | `platform-admin` role |
+    | **Tenant Management** | Tenant administrators | `tenants:admin` scope |
+    | **VC Operations** | Application developers / API consumers | Domain scopes (`credentials:offer`, `credentials:verify`, etc.) |
+
+    ## Authentication
+    All endpoints (except health checks and public discovery) require a Bearer JWT issued by the app's
+    OIDC provider at `/oidc/token`. Tokens are obtained via:
+    - **User login**: Authorization Code + PKCE flow (federated to Keycloak)
+    - **Service-to-service**: `client_credentials` grant
+
+    ## Async Operations
+    Credential operations that require external party action return `202 Accepted` with an Operation
+    resource. Poll `GET /operations/:id` or register webhooks for completion notifications.
+
+    ## Pagination
+    All list endpoints use cursor-based pagination with `?cursor=<opaque>&limit=<1-100>`.
+
+    ## Rate Limiting
+    Per-tenant rate limits apply. Exceeding limits returns `429` with `Retry-After` header.
+
+    ## Idempotency
+    POST endpoints accept an `Idempotency-Key` header (UUIDv4) to prevent duplicate resource creation.
+
+    ## Error Responses
+    All authenticated endpoints may return:
+    - `401 Unauthorized` — token is missing, expired, or invalid
+    - `403 Forbidden` — token is valid but lacks the required scope or role
+
+    These are not repeated on each operation for brevity.
+    See `components/responses/Unauthorized` and `components/responses/Forbidden` for the schema.
+  contact:
+    name: BC Gov Digital Trust
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: https://api.vc-common.example.com
+    description: Production
+  - url: http://localhost:3000
+    description: Local development
+
+# ── Tag Groups (Redoc x-tagGroups) ─────────────────────────────────────
+# Organizes the sidebar into four audience-scoped surfaces.
+# Swagger UI ignores x-tagGroups; use Redoc for grouped rendering.
+x-tagGroups:
+  - name: "🔑 Authentication"
+    description: |
+      Token exchange and tenant context switching — obtain a tenant-scoped Bearer
+      token here before calling any tenant-scoped endpoint.
+    tags:
+      - Auth
+
+  - name: "🔧 Platform Administration"
+    description: |
+      Endpoints for **service operators** who manage the platform itself.
+      Requires the `platform-admin` role. Tenants are not permitted to call these endpoints.
+    tags:
+      - Health
+      - Tenants
+      - Admin
+
+  - name: "🏢 Tenant Management"
+    description: |
+      Endpoints for **tenant administrators** who configure their tenant's VC infrastructure.
+      Requires `tenants:admin` scope (or explicit domain scopes where noted).
+      These are setup/configuration operations — not runtime credential flows.
+    tags:
+      - Tenant Settings
+      - Tenant Users
+      - Connectors
+      - Credential Definitions
+      - Issuance Profiles
+      - Verification Profiles
+      - Clients
+      - Webhooks
+      - Logs
+      - Audit Logs
+      - Events
+
+  - name: "🔐 VC Operations"
+    description: |
+      Endpoints for **application developers and API consumers** performing runtime VC operations.
+      Requires domain scopes: `credentials:offer`, `credentials:verify`, `credentials:hold`,
+      `credentials:revoke`, `connections:manage`. Discovery endpoints are unauthenticated.
+    tags:
+      - Credentials
+      - Presentations
+      - Connections
+      - Operations
+      - Discovery
+      - Webhook Ingestion
+
+tags:
+  # ── Authentication ──────────────────────────────────────────────────────
+  - name: Auth
+    description: |
+      Token exchange and tenant context switching.
+      **Audience**: All callers — obtain or switch a tenant-scoped Bearer token before
+      making any tenant-scoped API calls.
+      **Auth**: Active Bearer JWT required for `switch-tenant`.
+
+  # ── Platform Administration ────────────────────────────────────────────
+  - name: Health
+    description: |
+      Liveness and readiness probes.
+      **Audience**: Infrastructure / load balancers.
+      **Auth**: None required.
+  - name: Tenants
+    description: |
+      Tenant lifecycle management: create, list, read, update, suspend, and delete tenants.
+      Tenant-level configuration and onboarding are in the Tenant Settings group.
+      **Audience**: Platform administrators (`platform-admin` role).
+      **Auth**: `platform-admin` role required for all mutating operations.
+  - name: Admin
+    description: |
+      Platform-wide operational tooling: dead-letter queue management, session revocation,
+      global scope/role definitions, usage limit overrides, and bulk event replay.
+      **Audience**: Platform administrators (`platform-admin` role) only.
+      **Auth**: `platform-admin` role required for all endpoints in this group.
+
+  # ── Tenant Management ──────────────────────────────────────────────────
+  - name: Tenant Settings
+    description: |
+      Tenant-level self-management: onboarding workflow, tenant configuration,
+      usage monitoring, and role→scope customization within the tenant.
+      **Audience**: Tenant administrators.
+      **Auth**: `tenants:admin` scope.
+  - name: Tenant Users
+    description: |
+      Invite, list, update roles for, and remove users within a tenant.
+      **Audience**: Tenant administrators.
+      **Auth**: `tenants:admin` scope or `users:manage` scope.
+  - name: Connectors
+    description: |
+      Register and manage backend agent connector credentials (Traction, Credo).
+      Connectors are a prerequisite for all VC operations.
+      **Audience**: Tenant administrators.
+      **Auth**: `tenants:admin` scope.
+  - name: Credential Definitions
+    description: |
+      Register credential schemas and definitions with the backend agent.
+      Credential definitions are the low-level foundation that Issuance Profiles wrap.
+      **Audience**: Tenant administrators (setup step — API consumers use profiles, not definitions directly).
+      **Auth**: `tenants:admin` scope.
+  - name: Issuance Profiles
+    description: |
+      Create, publish, and deprecate named/versioned issuance configurations.
+      Profiles abstract credential format, schema, and protocol behind a stable identifier
+      consumed by VC Operations (`credentials:offer`).
+      **Audience**: Tenant administrators.
+      **Auth**: `profiles:manage` scope (implied by `tenants:admin`).
+  - name: Verification Profiles
+    description: |
+      Create, publish, and deprecate named/versioned verification templates.
+      Templates define the presentation definition consumed by VC Operations (`credentials:verify`).
+      **Audience**: Tenant administrators.
+      **Auth**: `profiles:manage` scope (implied by `tenants:admin`).
+  - name: Clients
+    description: |
+      Register and manage OAuth2 API clients for service-to-service (`client_credentials`) access.
+      Secrets are returned once at creation and are never retrievable again.
+      **Audience**: Tenant administrators.
+      **Auth**: `clients:manage` scope (implied by `tenants:admin`).
+  - name: Webhooks
+    description: |
+      Register, list, and delete webhook endpoints that receive async VC event notifications.
+      Events: `credential.issued`, `credential.verified`, `credential.accepted`,
+      `credential.rejected`, `credential.revoked`, `connection.established`.
+      **Audience**: Tenant administrators.
+      **Auth**: `tenants:admin` scope.
+  - name: Logs
+    description: |
+      Tenant-scoped structured log streaming (SSE) and querying backed by Loki.
+      Provides a secure proxy over raw agent logs without exposing infrastructure details.
+      **Audience**: Tenant administrators.
+      **Auth**: `logs:read` scope.
+  - name: Audit Logs
+    description: |
+      Append-only audit trail for all credential operations and admin actions within a tenant.
+      Supports filtered queries and CSV export for compliance reporting.
+      **Audience**: Tenant administrators.
+      **Auth**: `logs:read` scope.
+
+  - name: Events
+    description: |
+      Tenant-scoped view of the async job queue: list and replay failed (dead-letter) jobs
+      that belong to this tenant.
+      Provides self-service recovery for failed credential state updates, webhook deliveries,
+      and other async operations without requiring platform-admin intervention.
+      Server filters all results to `tenant_id` from the JWT — callers cannot access other tenants' jobs.
+      **Audience**: Tenant administrators.
+      **Auth**: `tenants:admin` scope.
+
+  # ── VC Operations ──────────────────────────────────────────────────────
+  - name: Credentials
+    description: |
+      Issue, batch-issue, accept, reject, revoke, and query credentials.
+      Supports both DIDComm (connection-based) and OID4VCI (connectionless) delivery modes.
+      Mutating operations return `202 Accepted` with an `Operation` resource; use the
+      Operations group to poll for completion or register webhooks.
+      **Audience**: Application developers / API consumers.
+      **Auth**: `credentials:offer` (issuance), `credentials:revoke` (revocation),
+      `credentials:hold` (holder accept/reject).
+  - name: Presentations
+    description: |
+      Request and verify credential presentations (proof requests).
+      Supports AnonCreds proof requests and DIF Presentation Exchange (OID4VP).
+      Async — returns an `Operation` resource; poll or use webhooks for result.
+      **Audience**: Application developers / API consumers.
+      **Auth**: `credentials:verify` scope.
+  - name: Connections
+    description: |
+      Create and manage DIDComm / OID4VC peer connections.
+      A connection is required for DIDComm-based issuance and verification;
+      OID4VCI/VP flows are connectionless.
+      **Audience**: Application developers / API consumers.
+      **Auth**: `connections:manage` scope.
+  - name: Operations
+    description: |
+      Track and poll async operations created by Credentials, Presentations, and Connections.
+      All mutating VC operations return a reference to an Operation resource here.
+      **Audience**: Application developers / API consumers.
+      **Auth**: Any valid tenant-scoped Bearer JWT.
+  - name: Discovery
+    description: |
+      Public, unauthenticated OID4VCI-aligned discovery endpoints.
+      Wallets and external verifiers use these to find published issuance/verification profiles
+      without requiring a Bearer token.
+      **Audience**: External wallets, verifiers, and public clients.
+      **Auth**: None required.
+  - name: Webhook Ingestion
+    description: |
+      Inbound webhook receivers for async state updates from backend agents
+      (Traction/ACA-Py, Credo Agent Service).
+      Authenticated via HMAC shared secret — not a Bearer JWT.
+      **Audience**: Internal — called by backend agents only, not by API consumers.
+      **Auth**: `X-Traction-Signature` HMAC header.
+
+security:
+  - BearerAuth: []
+
+paths:
+  # ─── Health ───────────────────────────────────────────────────────────
+  /health/live:
+    get:
+      operationId: getLiveness
+      summary: Liveness probe
+      description: Returns 200 if the process is running.
+      tags: [Health]
+      security: []
+      responses:
+        "200":
+          description: Process is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /health/ready:
+    get:
+      operationId: getReadiness
+      summary: Readiness probe
+      description: Returns 200 if all critical dependencies (DB, pg-boss, OIDC provider) are healthy.
+      tags: [Health]
+      security: []
+      responses:
+        "200":
+          description: All dependencies healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: One or more critical dependencies unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  # ─── Auth ─────────────────────────────────────────────────────────────
+  /api/v1/auth/switch-tenant:
+    post:
+      operationId: switchTenant
+      summary: Switch active tenant context
+      description: |
+        Exchange the current valid token for a new token scoped to a different tenant.
+        The user must have membership in the target tenant.
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenant_id]
+              properties:
+                tenant_id:
+                  type: string
+                  format: uuid
+                  description: Target tenant to switch to
+      responses:
+        "200":
+          description: New token issued for the target tenant
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  token_type:
+                    type: string
+                    example: Bearer
+                  expires_in:
+                    type: integer
+                    example: 300
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  # ─── Tenants ──────────────────────────────────────────────────────────
+  /api/v1/tenants:
+    post:
+      operationId: createTenant
+      summary: Create a new tenant
+      tags: [Tenants]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTenantRequest"
+      responses:
+        "201":
+          description: Tenant created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    get:
+      operationId: listTenants
+      summary: List tenants
+      description: Platform admins see all tenants; regular users see only their memberships.
+      tags: [Tenants]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Paginated tenant list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Tenant"
+
+  /api/v1/tenants/{tenantId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: getTenant
+      summary: Get tenant details
+      tags: [Tenants]
+      responses:
+        "200":
+          description: Tenant details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateTenant
+      summary: Update tenant
+      tags: [Tenants]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTenantRequest"
+      responses:
+        "200":
+          description: Tenant updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteTenant
+      summary: Soft-delete tenant (platform-admin only)
+      tags: [Tenants]
+      responses:
+        "204":
+          description: Tenant deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tenants/{tenantId}/status:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    patch:
+      operationId: updateTenantStatus
+      summary: Suspend or reactivate a tenant (platform-admin only)
+      tags: [Tenants]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  $ref: "#/components/schemas/TenantStatus"
+      responses:
+        "200":
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+
+  /api/v1/tenants/{tenantId}/config:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    patch:
+      operationId: updateTenantConfig
+      summary: Update tenant configuration
+      tags: [Tenant Settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantConfig"
+      responses:
+        "200":
+          description: Configuration updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Tenant"
+
+  /api/v1/tenants/{tenantId}/onboarding:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: getOnboardingStatus
+      summary: Get tenant onboarding progress
+      tags: [Tenant Settings]
+      responses:
+        "200":
+          description: Onboarding status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        completed:
+                          type: boolean
+                        skipped:
+                          type: boolean
+                  progress_percent:
+                    type: integer
+                    minimum: 0
+                    maximum: 100
+
+  /api/v1/tenants/{tenantId}/onboarding/steps/{stepName}/complete:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: stepName
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [configure-connector, register-credential-definition, create-issuance-profile, register-api-client]
+    post:
+      operationId: completeOnboardingStep
+      summary: Mark an onboarding step as complete
+      tags: [Tenant Settings]
+      responses:
+        "200":
+          description: Step marked complete
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        completed:
+                          type: boolean
+                        skipped:
+                          type: boolean
+                  progress_percent:
+                    type: integer
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tenants/{tenantId}/onboarding/steps/{stepName}/skip:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: stepName
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [configure-connector, register-credential-definition, create-issuance-profile, register-api-client]
+    post:
+      operationId: skipOnboardingStep
+      summary: Skip an onboarding step (mark as skipped)
+      tags: [Tenant Settings]
+      responses:
+        "200":
+          description: Step marked skipped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        completed:
+                          type: boolean
+                        skipped:
+                          type: boolean
+                  progress_percent:
+                    type: integer
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tenants/{tenantId}/onboarding/reset:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: resetOnboarding
+      summary: Reset onboarding progress (testing/demo only)
+      description: Clears all onboarding step progress and allows restart. Intended for development and testing scenarios.
+      tags: [Tenant Settings]
+      responses:
+        "200":
+          description: Onboarding progress reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  steps:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        completed:
+                          type: boolean
+                        skipped:
+                          type: boolean
+                  progress_percent:
+                    type: integer
+                    example: 0
+
+  # ─── Tenant Users ─────────────────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/users:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: inviteUser
+      summary: Invite a user to the tenant
+      tags: [Tenant Users]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InviteUserRequest"
+      responses:
+        "201":
+          description: User invited
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantUser"
+        "409":
+          $ref: "#/components/responses/Conflict"
+    get:
+      operationId: listTenantUsers
+      summary: List tenant members
+      tags: [Tenant Users]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: Paginated user list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/TenantUser"
+
+  /api/v1/tenants/{tenantId}/users/{userId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      operationId: updateTenantUser
+      summary: Update user role
+      tags: [Tenant Users]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  $ref: "#/components/schemas/TenantRole"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantUser"
+    delete:
+      operationId: removeTenantUser
+      summary: Remove user from tenant
+      tags: [Tenant Users]
+      responses:
+        "204":
+          description: User removed
+        "409":
+          description: Cannot remove last owner
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  # ─── Connectors ──────────────────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/connectors:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: createConnector
+      summary: Register a backend agent connector
+      tags: [Connectors]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConnectorRequest"
+      responses:
+        "201":
+          description: Connector registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connector"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    get:
+      operationId: listConnectors
+      summary: List tenant connectors
+      tags: [Connectors]
+      responses:
+        "200":
+          description: Connector list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Connector"
+
+  /api/v1/tenants/{tenantId}/connectors/{connectorId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: connectorId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getConnector
+      summary: Get connector details
+      tags: [Connectors]
+      responses:
+        "200":
+          description: Connector details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connector"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateConnector
+      summary: Update connector endpoint or rotate credentials
+      tags: [Connectors]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateConnectorRequest"
+      responses:
+        "200":
+          description: Connector updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connector"
+    delete:
+      operationId: deleteConnector
+      summary: Remove connector
+      description: Fails if active credential definitions depend on this connector.
+      tags: [Connectors]
+      responses:
+        "204":
+          description: Connector removed
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /api/v1/tenants/{tenantId}/connectors/{connectorId}/test:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: connectorId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: testConnector
+      summary: Test connector connectivity
+      tags: [Connectors]
+      responses:
+        "200":
+          description: Connectivity test result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, unhealthy]
+                  latency_ms:
+                    type: integer
+                  message:
+                    type: string
+
+  # ─── Credential Definitions ──────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/credential-definitions:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: createCredentialDefinition
+      summary: Register a credential definition
+      tags: [Credential Definitions]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCredentialDefinitionRequest"
+      responses:
+        "201":
+          description: Credential definition registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialDefinition"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    get:
+      operationId: listCredentialDefinitions
+      summary: List credential definitions
+      tags: [Credential Definitions]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: format
+          in: query
+          schema:
+            $ref: "#/components/schemas/CredentialFormat"
+        - name: connector_type
+          in: query
+          schema:
+            $ref: "#/components/schemas/ConnectorType"
+      responses:
+        "200":
+          description: Paginated credential definition list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/CredentialDefinition"
+
+  /api/v1/tenants/{tenantId}/credential-definitions/{credDefId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: credDefId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getCredentialDefinition
+      summary: Get credential definition details
+      tags: [Credential Definitions]
+      responses:
+        "200":
+          description: Credential definition details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialDefinition"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteCredentialDefinition
+      summary: Deactivate a credential definition
+      tags: [Credential Definitions]
+      responses:
+        "204":
+          description: Credential definition deactivated
+
+  # ─── Issuance Profiles ───────────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/profiles/issuance:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: createIssuanceProfile
+      summary: Create an issuance profile
+      tags: [Issuance Profiles]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIssuanceProfileRequest"
+      responses:
+        "201":
+          description: Issuance profile created (draft status)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuanceProfile"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    get:
+      operationId: listIssuanceProfiles
+      summary: List issuance profiles
+      tags: [Issuance Profiles]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/ProfileStatus"
+        - name: format
+          in: query
+          schema:
+            $ref: "#/components/schemas/CredentialFormat"
+        - name: name
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Paginated issuance profile list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/IssuanceProfile"
+
+  /api/v1/tenants/{tenantId}/profiles/issuance/{profileId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ProfileId"
+    get:
+      operationId: getIssuanceProfile
+      summary: Get issuance profile details
+      tags: [Issuance Profiles]
+      responses:
+        "200":
+          description: Issuance profile details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuanceProfile"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateIssuanceProfile
+      summary: Update issuance profile (draft only)
+      tags: [Issuance Profiles]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateIssuanceProfileRequest"
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuanceProfile"
+        "409":
+          description: Cannot update a published or deprecated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tenants/{tenantId}/profiles/issuance/{profileId}/publish:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ProfileId"
+    post:
+      operationId: publishIssuanceProfile
+      summary: Publish an issuance profile (draft → published)
+      tags: [Issuance Profiles]
+      responses:
+        "200":
+          description: Profile published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuanceProfile"
+        "409":
+          description: Profile is not in draft status or validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tenants/{tenantId}/profiles/issuance/{profileId}/deprecate:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ProfileId"
+    post:
+      operationId: deprecateIssuanceProfile
+      summary: Deprecate an issuance profile (published → deprecated)
+      tags: [Issuance Profiles]
+      responses:
+        "200":
+          description: Profile deprecated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuanceProfile"
+
+  # ─── Verification Profiles ──────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/profiles/verification:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: createVerificationProfile
+      summary: Create a verification profile
+      tags: [Verification Profiles]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVerificationProfileRequest"
+      responses:
+        "201":
+          description: Verification profile created (draft status)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationProfile"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+    get:
+      operationId: listVerificationProfiles
+      summary: List verification profiles
+      tags: [Verification Profiles]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/ProfileStatus"
+        - name: issuance_profile_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: public
+          in: query
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: Paginated verification profile list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/VerificationProfile"
+
+  /api/v1/tenants/{tenantId}/profiles/verification/{profileId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ProfileId"
+    get:
+      operationId: getVerificationProfile
+      summary: Get verification profile details
+      tags: [Verification Profiles]
+      responses:
+        "200":
+          description: Verification profile details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationProfile"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: updateVerificationProfile
+      summary: Update verification profile (draft only)
+      tags: [Verification Profiles]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateVerificationProfileRequest"
+      responses:
+        "200":
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationProfile"
+        "409":
+          description: Cannot update a published or deprecated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /api/v1/tenants/{tenantId}/profiles/verification/{profileId}/publish:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ProfileId"
+    post:
+      operationId: publishVerificationProfile
+      summary: Publish a verification profile
+      tags: [Verification Profiles]
+      responses:
+        "200":
+          description: Profile published
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationProfile"
+
+  /api/v1/tenants/{tenantId}/profiles/verification/{profileId}/deprecate:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/ProfileId"
+    post:
+      operationId: deprecateVerificationProfile
+      summary: Deprecate a verification profile
+      tags: [Verification Profiles]
+      responses:
+        "200":
+          description: Profile deprecated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationProfile"
+
+  # ─── Credentials ─────────────────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/credentials/offer:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: offerCredential
+      summary: Offer/issue a credential
+      description: |
+        Issue a credential via a published issuance profile.
+
+        **Delivery mode** is determined by the presence of `connection_id`:
+        - **Present** → DIDComm delivery (push offer to connected agent). Returns 202.
+        - **Absent** → OID4VCI delivery (generate credential_offer_uri). Returns 200.
+
+        MVP: Only DIDComm delivery is supported (Traction adapter). Omitting `connection_id` returns 400.
+      tags: [Credentials]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OfferCredentialRequest"
+            examples:
+              profile_didcomm:
+                summary: Issue via profile (DIDComm)
+                value:
+                  profile_id: "drivers-license/1.0"
+                  connection_id: "c3d4e5f6-7890-1234-abcd-ef0123456789"
+                  attributes:
+                    given_name: Alice
+                    family_name: Smith
+                    birth_date: "1995-03-15"
+              profile_oid4vci:
+                summary: Issue via profile (OID4VCI, post-MVP)
+                value:
+                  profile_id: "drivers-license/1.0"
+                  attributes:
+                    given_name: Alice
+                    family_name: Smith
+                    birth_date: "1995-03-15"
+              legacy:
+                summary: Legacy mode (direct cred_def)
+                value:
+                  credential_definition_id: "a1b2c3d4-5678-9012-abcd-ef0123456789"
+                  format: anoncreds
+                  connection_id: "c3d4e5f6-7890-1234-abcd-ef0123456789"
+                  attributes:
+                    given_name: Alice
+                    birth_date: "1995-03-15"
+      responses:
+        "200":
+          description: Credential offer URI generated (OID4VCI, connectionless)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+              example:
+                id: "op-uuid"
+                type: credential.offer
+                state: completed
+                created_at: "2025-01-15T10:30:00.000Z"
+                updated_at: "2025-01-15T10:30:00.000Z"
+                result:
+                  credential_offer_uri: "openid-credential-offer://..."
+        "202":
+          description: Credential offer sent (DIDComm, async)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+              example:
+                id: "op-uuid"
+                type: credential.offer
+                state: pending
+                created_at: "2025-01-15T10:30:00.000Z"
+                updated_at: "2025-01-15T10:30:00.000Z"
+                result: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/tenants/{tenantId}/credentials/offer-batch:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: offerCredentialBatch
+      summary: Batch credential issuance
+      description: |
+        Issue credentials to multiple holders in a single request. Max 500 items.
+        All items use the same profile. DIDComm delivery only (connection_id required per item).
+      tags: [Credentials]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OfferCredentialBatchRequest"
+      responses:
+        "202":
+          description: Batch accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+              example:
+                id: "batch-op-uuid"
+                type: credential.offer-batch
+                state: processing
+                created_at: "2025-01-15T10:30:00.000Z"
+                updated_at: "2025-01-15T10:30:00.000Z"
+                result: null
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "422":
+          $ref: "#/components/responses/ValidationError"
+
+  /api/v1/tenants/{tenantId}/credentials/{exchangeId}/accept:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: exchangeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: >
+          The `id` (Operation UUID) returned by `POST /credentials/offer`.
+          This is **not** the persisted Credential record UUID—that is used by
+          `GET /credentials/{credentialId}` and `POST /credentials/{credentialId}/revoke`.
+    post:
+      operationId: acceptCredential
+      summary: Accept a credential offer (holder)
+      tags: [Credentials]
+      responses:
+        "200":
+          description: Credential accepted (synchronous confirmation)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "202":
+          description: Accept request submitted (async)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tenants/{tenantId}/credentials/{exchangeId}/reject:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: exchangeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+        description: >
+          The `id` (Operation UUID) returned by `POST /credentials/offer`.
+          This is **not** the persisted Credential record UUID.
+    post:
+      operationId: rejectCredential
+      summary: Reject a credential offer (holder)
+      tags: [Credentials]
+      responses:
+        "200":
+          description: Credential rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tenants/{tenantId}/credentials/{credentialId}/revoke:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: credentialId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: revokeCredential
+      summary: Revoke an issued credential
+      tags: [Credentials]
+      responses:
+        "200":
+          description: Revocation completed synchronously
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "202":
+          description: Revocation in progress (async ledger write)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tenants/{tenantId}/credentials:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: listCredentials
+      summary: List issued credentials
+      description: List credential records for the tenant. Useful for finding credentials to revoke or tracking issuance history.
+      tags: [Credentials]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: state
+          in: query
+          schema:
+            type: string
+            enum: [offered, issued, revoked, expired]
+        - name: issuance_profile_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: connection_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: format
+          in: query
+          schema:
+            $ref: "#/components/schemas/CredentialFormat"
+      responses:
+        "200":
+          description: Paginated credential list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Credential"
+
+  /api/v1/tenants/{tenantId}/credentials/{credentialId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: credentialId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getCredential
+      summary: Get credential details
+      tags: [Credentials]
+      responses:
+        "200":
+          description: Credential details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Credential"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tenants/{tenantId}/credentials/revoke-batch:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: revokeCredentialBatch
+      summary: Batch credential revocation
+      description: Revoke multiple credentials in a single request. Max 500 items.
+      tags: [Credentials]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ids]
+              properties:
+                ids:
+                  type: array
+                  items:
+                    type: string
+                    format: uuid
+                  minItems: 1
+                  maxItems: 500
+                  description: Credential IDs to revoke
+      responses:
+        "202":
+          description: Batch revocation accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+
+  # ─── Presentations ──────────────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/presentations/request:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: requestPresentation
+      summary: Request a presentation/proof
+      description: |
+        Request a verifiable presentation. Supports profile-based or raw presentation definition.
+
+        **Delivery mode** determined by `connection_id`:
+        - **Present** → DIDComm (send proof request to connected agent). Returns 202.
+        - **Absent** → OID4VP (generate authorization_request_uri). Returns 200.
+      tags: [Presentations]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RequestPresentationRequest"
+            examples:
+              profile_mode:
+                summary: Via verification profile (DIDComm)
+                value:
+                  verification_profile_id: "age-verification/1.0"
+                  connection_id: "c3d4e5f6-7890-1234-abcd-ef0123456789"
+              raw_mode:
+                summary: Raw presentation definition
+                value:
+                  presentation_definition:
+                    id: "ad-hoc-request"
+                    input_descriptors:
+                      - id: "age-check"
+                        constraints:
+                          fields:
+                            - path: ["$.birth_date"]
+                  format: anoncreds
+                  connection_id: "c3d4e5f6-7890-1234-abcd-ef0123456789"
+      responses:
+        "200":
+          description: Authorization request URI generated (OID4VP)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "202":
+          description: Presentation request sent (DIDComm, async)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  # ─── Connections ─────────────────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/connections:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: createConnection
+      summary: Create or accept a connection
+      description: |
+        Two modes based on request body:
+        - **Create invitation** (no `invitation_url`): generates a new invitation URL.
+        - **Accept invitation** (`invitation_url` provided): accepts an existing invitation from another party.
+
+        Both modes return an Operation with `type: connection.create`. The `result` object
+        indicates the mode: it contains `invitation_url` when creating, or `connection_id` + `state`
+        when accepting.
+      tags: [Connections]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateConnectionRequest"
+      responses:
+        "200":
+          description: Invitation created (synchronous)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+              example:
+                id: "op-uuid"
+                type: connection.create
+                state: completed
+                created_at: "2025-01-15T10:30:00.000Z"
+                updated_at: "2025-01-15T10:30:00.000Z"
+                result:
+                  invitation_url: "https://..."
+                  connection_id: "uuid"
+    get:
+      operationId: listConnections
+      summary: List connections
+      tags: [Connections]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: state
+          in: query
+          schema:
+            $ref: "#/components/schemas/ConnectionState"
+        - name: protocol
+          in: query
+          schema:
+            $ref: "#/components/schemas/ConnectionProtocol"
+      responses:
+        "200":
+          description: Paginated connection list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Connection"
+
+  /api/v1/tenants/{tenantId}/connections/{connectionId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: connectionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getConnection
+      summary: Get connection details
+      tags: [Connections]
+      responses:
+        "200":
+          description: Connection details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Connection"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteConnection
+      summary: Remove a connection
+      tags: [Connections]
+      responses:
+        "204":
+          description: Connection removed
+
+  # ─── Operations ──────────────────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/operations:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: listOperations
+      summary: List operations
+      tags: [Operations]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: state
+          in: query
+          schema:
+            $ref: "#/components/schemas/OperationState"
+        - name: type
+          in: query
+          schema:
+            type: string
+            description: "Filter by operation type (e.g., credential.offer, presentation.request)"
+      responses:
+        "200":
+          description: Paginated operation list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Operation"
+
+  /api/v1/tenants/{tenantId}/operations/{operationId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/OperationId"
+    get:
+      operationId: getOperation
+      summary: Get operation status and result
+      description: |
+        Poll an operation's current state and result. Sets `viewed_at` on first retrieval
+        of a completed/failed operation (triggers TTL recalculation).
+
+        Supports long-polling via `Prefer: wait=<seconds>` header.
+      tags: [Operations]
+      parameters:
+        - name: Prefer
+          in: header
+          schema:
+            type: string
+            example: "wait=30"
+          description: "Long-polling: hold connection until state changes or timeout"
+      responses:
+        "200":
+          description: Operation status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Operation"
+              examples:
+                pending:
+                  summary: Pending operation
+                  value:
+                    id: "op-uuid"
+                    type: credential.offer
+                    state: pending
+                    created_at: "2025-01-15T10:30:00.000Z"
+                    updated_at: "2025-01-15T10:30:00.000Z"
+                    result: null
+                completed:
+                  summary: Completed operation
+                  value:
+                    id: "op-uuid"
+                    type: credential.offer
+                    state: completed
+                    created_at: "2025-01-15T10:30:00.000Z"
+                    updated_at: "2025-01-15T10:30:05.000Z"
+                    result:
+                      credential_exchange_id: "exch-uuid"
+                      state: credential_issued
+                      attributes:
+                        given_name: Alice
+                failed:
+                  summary: Failed operation
+                  value:
+                    id: "op-uuid"
+                    type: credential.offer
+                    state: failed
+                    created_at: "2025-01-15T10:30:00.000Z"
+                    updated_at: "2025-01-15T10:30:05.000Z"
+                    result:
+                      code: ADAPTER_TIMEOUT
+                      message: Traction did not respond within 30s
+                batch_processing:
+                  summary: Batch operation (processing)
+                  value:
+                    id: "batch-uuid"
+                    type: credential.offer-batch
+                    state: processing
+                    created_at: "2025-01-15T10:30:00.000Z"
+                    updated_at: "2025-01-15T10:32:00.000Z"
+                    result:
+                      total: 200
+                      completed: 142
+                      failed: 3
+                      pending: 55
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tenants/{tenantId}/operations/{operationId}/request:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/OperationId"
+    get:
+      operationId: getOperationRequest
+      summary: Get the original request that created the operation
+      description: |
+        Returns the HTTP method, path, and body that triggered this operation.
+        **Note**: The body may contain PII (credential attributes). Data is purged with the operation on TTL expiry.
+      tags: [Operations]
+      responses:
+        "200":
+          description: Original request details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  method:
+                    type: string
+                    example: POST
+                  path:
+                    type: string
+                    example: "/api/v1/tenants/b7e4a1f0-.../credentials/offer"
+                  body:
+                    type: object
+                    description: Original request body
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tenants/{tenantId}/operations/{operationId}/items:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - $ref: "#/components/parameters/OperationId"
+    get:
+      operationId: listBatchOperationItems
+      summary: List child operations of a batch
+      description: Returns 404 if the operation is not a batch parent.
+      tags: [Operations]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: state
+          in: query
+          schema:
+            $ref: "#/components/schemas/OperationState"
+      responses:
+        "200":
+          description: Paginated list of batch child operations
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Operation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  # ─── Webhooks ────────────────────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/webhooks:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: createWebhook
+      summary: Register a webhook endpoint
+      tags: [Webhooks]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWebhookRequest"
+      responses:
+        "201":
+          description: Webhook registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebhookRegistration"
+          headers:
+            X-Webhook-Secret:
+              description: HMAC signing secret (returned ONCE, never retrievable again)
+              schema:
+                type: string
+    get:
+      operationId: listWebhooks
+      summary: List webhook registrations
+      tags: [Webhooks]
+      responses:
+        "200":
+          description: Webhook list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/WebhookRegistration"
+
+  /api/v1/tenants/{tenantId}/webhooks/{webhookId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: webhookId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      operationId: deleteWebhook
+      summary: Remove a webhook registration
+      tags: [Webhooks]
+      responses:
+        "204":
+          description: Webhook removed
+
+  # ─── OAuth Clients ──────────────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/clients:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: createClient
+      summary: Register an API client (OAuth2 client_credentials)
+      description: |
+        Creates a new OAuth2 client for service-to-service authentication.
+        The `client_secret` is returned ONCE in the response and cannot be retrieved again.
+      tags: [Clients]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClientRequest"
+      responses:
+        "201":
+          description: Client registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientWithSecret"
+    get:
+      operationId: listClients
+      summary: List API clients
+      tags: [Clients]
+      responses:
+        "200":
+          description: Client list (no secrets)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Client"
+
+  /api/v1/tenants/{tenantId}/clients/{clientId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: clientId
+        in: path
+        required: true
+        schema:
+          type: string
+    delete:
+      operationId: deleteClient
+      summary: Revoke an API client
+      tags: [Clients]
+      responses:
+        "204":
+          description: Client revoked
+
+  /api/v1/tenants/{tenantId}/clients/{clientId}/rotate-secret:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: clientId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: rotateClientSecret
+      summary: Rotate client secret
+      description: Generates a new secret. The old secret is immediately invalidated.
+      tags: [Clients]
+      responses:
+        "200":
+          description: New secret generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClientWithSecret"
+
+  # ─── Logs ────────────────────────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/logs:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: queryLogs
+      summary: Query tenant logs (history)
+      description: Cursor-paginated log retrieval from Loki, scoped to the authenticated tenant.
+      tags: [Logs]
+      parameters:
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [all, api, "adapter:traction", "adapter:credo", "agent:traction"]
+            default: all
+        - name: level
+          in: query
+          schema:
+            type: string
+            enum: [debug, info, warn, error]
+        - name: search
+          in: query
+          schema:
+            type: string
+            maxLength: 200
+            description: Free-text search filter
+        - name: operation_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter logs related to a specific operation
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+            description: Start of time range (ISO 8601)
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+            description: End of time range (ISO 8601)
+        - $ref: "#/components/parameters/Cursor"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+      responses:
+        "200":
+          description: Paginated log entries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/LogEntry"
+
+  /api/v1/tenants/{tenantId}/logs/stream:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: streamLogs
+      summary: Live log stream (SSE)
+      description: |
+        Server-Sent Events endpoint for real-time log tailing.
+        Max 3 concurrent connections per tenant.
+      tags: [Logs]
+      parameters:
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [all, api, "adapter:traction", "adapter:credo", "agent:traction"]
+            default: all
+        - name: level
+          in: query
+          schema:
+            type: string
+            enum: [debug, info, warn, error]
+        - name: search
+          in: query
+          schema:
+            type: string
+            maxLength: 200
+        - name: operation_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter logs related to a specific operation
+      responses:
+        "200":
+          description: SSE event stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: "SSE events with `data` field containing JSON LogEntry"
+
+  # ─── Discovery (Public, Unauthenticated) ─────────────────────────────
+  /api/v1/issuers/{tenantSlug}/.well-known/openid-credential-issuer:
+    parameters:
+      - name: tenantSlug
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: getIssuerMetadata
+      summary: OID4VCI Credential Issuer Metadata
+      description: |
+        Public, unauthenticated endpoint returning OID4VCI-compatible metadata.
+        Only includes published issuance profiles.
+      tags: [Discovery]
+      security: []
+      responses:
+        "200":
+          description: Issuer metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IssuerMetadata"
+        "404":
+          description: Tenant not found by slug
+
+  /api/v1/issuers/{tenantSlug}/profiles:
+    parameters:
+      - name: tenantSlug
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      operationId: listPublicProfiles
+      summary: List published profiles (public)
+      description: Unauthenticated. Returns published issuance and public verification profiles.
+      tags: [Discovery]
+      security: []
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [issuance, verification, all]
+            default: all
+        - name: name
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Public profile list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  issuance_profiles:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/IssuanceProfile"
+                  verification_profiles:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/VerificationProfile"
+
+  # ─── Audit Logs ──────────────────────────────────────────────────────
+  /api/v1/tenants/{tenantId}/audit-logs:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: listAuditLogs
+      summary: Query audit log entries
+      description: |
+        Retrieve structured audit log records for the tenant.
+        Audit logs track business actions (issue, verify, revoke, create, update, delete, login, token_grant)
+        and are stored in PostgreSQL (separate from operational Loki logs).
+      tags: [Audit Logs]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: action
+          in: query
+          schema:
+            type: string
+            enum: [issue, verify, hold, revoke, create, update, delete, login, token_grant]
+        - name: actor_id
+          in: query
+          schema:
+            type: string
+          description: Filter by actor (user ID or client ID)
+        - name: resource_type
+          in: query
+          schema:
+            type: string
+          description: Filter by resource type (e.g., credential, connection, tenant)
+        - name: resource_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: operation_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filter audit entries linked to a specific operation
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: Paginated audit log entries
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/AuditLogEntry"
+
+  /api/v1/tenants/{tenantId}/audit-logs/{auditLogId}:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: auditLogId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getAuditLogEntry
+      summary: Get audit log entry detail
+      tags: [Audit Logs]
+      responses:
+        "200":
+          description: Audit log entry with full metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogEntry"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/tenants/{tenantId}/audit-logs/export:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: exportAuditLogs
+      summary: Export audit logs as CSV
+      description: Returns audit log entries matching the filters as a downloadable CSV file.
+      tags: [Audit Logs]
+      parameters:
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: since
+          in: query
+          schema:
+            type: string
+            format: date-time
+        - name: until
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: CSV file download
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+                example: 'attachment; filename="audit-logs-2025-01-15.csv"'
+
+  # ─── Webhook Ingestion ───────────────────────────────────────────────
+  /api/v1/webhooks/traction:
+    post:
+      operationId: ingestTractionWebhook
+      summary: Receive Traction webhook callbacks
+      description: |
+        Endpoint for Traction/ACA-Py to deliver state change notifications.
+        Authenticated via shared secret or IP whitelist.
+      tags: [Webhook Ingestion]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Traction webhook payload (topic-dependent structure)
+              properties:
+                topic:
+                  type: string
+                  enum: [issue_credential, present_proof, connections, revocation_registry]
+                payload:
+                  type: object
+      responses:
+        "200":
+          description: Webhook received and enqueued
+
+  # ─── Admin ──────────────────────────────────────────────────────────
+  /api/v1/admin/operations/stats:
+    get:
+      operationId: getOperationStats
+      summary: Operation statistics (platform-admin)
+      tags: [Admin]
+      responses:
+        "200":
+          description: Operation stats
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  by_state:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  oldest_pending:
+                    type: string
+                    format: date-time
+                    nullable: true
+
+  /api/v1/admin/events/dead-letter:
+    get:
+      operationId: listDeadLetterJobs
+      summary: List dead-letter (failed) jobs (platform-admin, all tenants)
+      description: |
+        Returns all dead-letter jobs across every tenant. Provides cross-tenant visibility
+        for platform operators.
+        For tenant-scoped self-service recovery, see `GET /tenants/{tenantId}/events/dead-letter`.
+      tags: [Admin]
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - name: tenant_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Optional filter by tenant (platform-admin can filter to a specific tenant)
+      responses:
+        "200":
+          description: Failed jobs list
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PaginatedResponse"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            id:
+                              type: string
+                            queue:
+                              type: string
+                            data:
+                              type: object
+                            failed_at:
+                              type: string
+                              format: date-time
+                            error:
+                              type: string
+
+  /api/v1/admin/events/dead-letter/{jobId}/replay:
+    parameters:
+      - name: jobId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      operationId: replayDeadLetterJob
+      summary: Replay a dead-letter job (platform-admin)
+      description: |
+        Re-enqueues any dead-letter job by ID regardless of tenant ownership.
+        For tenant-scoped replay with ownership validation, see
+        `POST /tenants/{tenantId}/events/dead-letter/{jobId}/replay`.
+      tags: [Admin]
+      responses:
+        "202":
+          description: Job replayed
+
+  /api/v1/admin/events/dead-letter/replay-bulk:
+    post:
+      operationId: replayDeadLetterBulk
+      summary: Bulk replay dead-letter jobs by date range
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                since:
+                  type: string
+                  format: date-time
+                  description: Replay jobs that failed after this time
+                until:
+                  type: string
+                  format: date-time
+                  description: Replay jobs that failed before this time
+                queue:
+                  type: string
+                  description: Filter by queue name (optional)
+      responses:
+        "202":
+          description: Bulk replay initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  replayed_count:
+                    type: integer
+                  message:
+                    type: string
+
+  /api/v1/admin/users/{userId}/revoke-sessions:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      operationId: revokeUserSessions
+      summary: Revoke all sessions for a user (platform-admin)
+      tags: [Admin]
+      responses:
+        "204":
+          description: All sessions revoked
+
+  /api/v1/scopes:
+    get:
+      operationId: listScopes
+      summary: List available scopes
+      tags: [Admin]
+      responses:
+        "200":
+          description: Scope list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        description:
+                          type: string
+                        level:
+                          type: integer
+
+  /api/v1/roles:
+    get:
+      operationId: listRoles
+      summary: List roles with scope mappings
+      tags: [Admin]
+      responses:
+        "200":
+          description: Roles and their scopes
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        name:
+                          type: string
+                        scopes:
+                          type: array
+                          items:
+                            type: string
+
+  /api/v1/tenants/{tenantId}/roles/{role}/scopes:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+      - name: role
+        in: path
+        required: true
+        schema:
+          $ref: "#/components/schemas/TenantRole"
+    patch:
+      operationId: updateTenantRoleScopes
+      summary: Customize role scope mappings for a tenant
+      description: |
+        Override default role→scope mappings for a specific tenant.
+        Role hierarchy is enforced: cannot assign a scope to a child role that the parent doesn't have.
+      tags: [Tenant Settings]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [scopes]
+              properties:
+                scopes:
+                  type: array
+                  items:
+                    type: string
+                  description: Updated scope list for this role in this tenant
+      responses:
+        "200":
+          description: Role scopes updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  role:
+                    type: string
+                  scopes:
+                    type: array
+                    items:
+                      type: string
+        "400":
+          description: Scope hierarchy violation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/tenants/{tenantId}/usage:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    get:
+      operationId: getTenantUsage
+      summary: Get tenant usage statistics
+      tags: [Tenant Settings]
+      responses:
+        "200":
+          description: Usage data
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_calls_today:
+                    type: integer
+                  credentials_issued_today:
+                    type: integer
+                  connections_active:
+                    type: integer
+                  storage_mb:
+                    type: number
+
+  /api/v1/tenants/{tenantId}/usage/reset-counters:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    post:
+      operationId: resetTenantUsageCounters
+      summary: Reset usage counters (admin only)
+      description: |
+        Reset rate limit and usage counters for the tenant. Intended for incident response,
+        testing, or correcting erroneous rate limit blocks. Requires platform-admin role.
+      tags: [Admin]
+      responses:
+        "200":
+          description: Counters reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    example: "Usage counters reset successfully"
+                  reset_at:
+                    type: string
+                    format: date-time
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/tenants/{tenantId}/usage/limits:
+    parameters:
+      - $ref: "#/components/parameters/TenantId"
+    patch:
+      operationId: updateTenantUsageLimits
+      summary: Override tenant quota limits (admin only)
+      description: |
+        Temporarily override per-tenant rate limits and quotas (API calls/min, credentials/day, storage).
+        Intended for SLA management, tier upgrades, or incident mitigation. Requires platform-admin role.
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                api_calls_per_minute:
+                  type: integer
+                  minimum: 1
+                  description: Override default API rate limit
+                credentials_per_day:
+                  type: integer
+                  minimum: 1
+                  description: Override daily credential issuance limit
+                storage_mb:
+                  type: integer
+                  minimum: 1
+                  description: Override storage quota
+                expires_at:
+                  type: string
+                  format: date-time
+                  nullable: true
+                  description: When this override expires (null for permanent)
+      responses:
+        "200":
+          description: Limits updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  api_calls_per_minute:
+                    type: integer
+                  credentials_per_day:
+                    type: integer
+                  storage_mb:
+                    type: integer
+                  expires_at:
+                    type: string
+                    format: date-time
+                    nullable: true
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+# ═══════════════════════════════════════════════════════════════════════
+# Components
+# ═══════════════════════════════════════════════════════════════════════
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: App-issued JWT obtained via /oidc/token (client_credentials or authorization_code grant)
+
+  parameters:
+    TenantId:
+      name: tenantId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Tenant UUID
+
+    ProfileId:
+      name: profileId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    OperationId:
+      name: operationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+      description: Opaque pagination cursor from a previous response
+
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Number of items per page
+
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      schema:
+        type: string
+        format: uuid
+      description: UUIDv4 idempotency key to prevent duplicate creation
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: PROTOCOL_NOT_SUPPORTED
+              message: "OID4VCI delivery is not supported in MVP (connection_id is required)"
+              request_id: "req-uuid"
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: RESOURCE_NOT_FOUND
+              message: "Tenant not found"
+              request_id: "req-uuid"
+
+    Forbidden:
+      description: Insufficient permissions
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: INSUFFICIENT_SCOPE
+              message: "Token missing required scope: credentials:offer"
+              request_id: "req-uuid"
+
+    Conflict:
+      description: Resource conflict
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: DUPLICATE_RESOURCE
+              message: "Tenant with slug 'acme-corp' already exists"
+              request_id: "req-uuid"
+
+    ValidationError:
+      description: Validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: VALIDATION_FAILED
+              message: "Request body validation failed"
+              details:
+                - field: attributes.birth_date
+                  expected: string (ISO date)
+                  actual: integer
+                  message: "birth_date must be a date string"
+              request_id: "req-uuid"
+
+    Unauthorized:
+      description: Authentication required or token invalid/expired
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            example: 'Bearer error="invalid_token", error_description="Token has expired"'
+          description: RFC-compliant challenge header
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            error:
+              code: AUTHENTICATION_REQUIRED
+              message: "Bearer token is missing, expired, or invalid"
+              request_id: "req-uuid"
+
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Seconds until rate limit resets
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+  schemas:
+    # ─── Common ──────────────────────────────────────────────────────
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+            message:
+              type: string
+              description: Human-readable error message
+            details:
+              type: array
+              items:
+                type: object
+                properties:
+                  field:
+                    type: string
+                  expected:
+                    type: string
+                  actual:
+                    type: string
+                  message:
+                    type: string
+            request_id:
+              type: string
+              format: uuid
+
+    PaginatedResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: {}
+        pagination:
+          type: object
+          properties:
+            next_cursor:
+              type: string
+              nullable: true
+            has_more:
+              type: boolean
+            total_count:
+              type: integer
+              description: Optional total count (may be omitted for performance)
+
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded, unhealthy]
+        checks:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              status:
+                type: string
+                enum: [up, down]
+              message:
+                type: string
+
+    # ─── Tenant ──────────────────────────────────────────────────────
+    Tenant:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        slug:
+          type: string
+        description:
+          type: string
+          nullable: true
+        status:
+          $ref: "#/components/schemas/TenantStatus"
+        config:
+          $ref: "#/components/schemas/TenantConfig"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    TenantStatus:
+      type: string
+      enum: [active, suspended, deactivated]
+
+    TenantConfig:
+      type: object
+      properties:
+        allowed_formats:
+          type: array
+          items:
+            $ref: "#/components/schemas/CredentialFormat"
+        default_connector:
+          type: string
+          format: uuid
+          nullable: true
+        features:
+          type: object
+          description: Feature flags (key-value)
+        rate_limits:
+          type: object
+          readOnly: true
+          description: |
+            Active per-tenant rate limit overrides. Populated when a platform-admin
+            has called `PATCH /usage/limits`; absent when platform defaults apply.
+          properties:
+            api_calls_per_minute:
+              type: integer
+              nullable: true
+            credentials_per_day:
+              type: integer
+              nullable: true
+            storage_mb:
+              type: integer
+              nullable: true
+            expires_at:
+              type: string
+              format: date-time
+              nullable: true
+              description: When this override expires (null = permanent)
+        operation_ttl:
+          type: object
+          properties:
+            completed_viewed:
+              type: string
+              example: "1h"
+            completed_unviewed:
+              type: string
+              example: "72h"
+            failed_viewed:
+              type: string
+              example: "24h"
+            failed_unviewed:
+              type: string
+              example: "7d"
+            pending_stale:
+              type: string
+              example: "24h"
+
+    CreateTenantRequest:
+      type: object
+      required: [name, slug]
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        slug:
+          type: string
+          pattern: "^[a-z0-9-]+$"
+          minLength: 2
+          maxLength: 50
+        description:
+          type: string
+          maxLength: 500
+
+    UpdateTenantRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+
+    # ─── Tenant User ─────────────────────────────────────────────────
+    TenantUser:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        display_name:
+          type: string
+          nullable: true
+        role:
+          $ref: "#/components/schemas/TenantRole"
+        status:
+          type: string
+          enum: [active, invited, disabled]
+        created_at:
+          type: string
+          format: date-time
+
+    TenantRole:
+      type: string
+      enum: [owner, admin, member, readonly]
+
+    InviteUserRequest:
+      type: object
+      required: [email, role]
+      properties:
+        email:
+          type: string
+          format: email
+        role:
+          $ref: "#/components/schemas/TenantRole"
+
+    # ─── Connector ───────────────────────────────────────────────────
+    Connector:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        connector_type:
+          $ref: "#/components/schemas/ConnectorType"
+        endpoint_url:
+          type: string
+          format: uri
+        active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ConnectorType:
+      type: string
+      enum: [traction, credo]
+
+    CreateConnectorRequest:
+      type: object
+      required: [connector_type, endpoint_url, credentials]
+      properties:
+        connector_type:
+          $ref: "#/components/schemas/ConnectorType"
+        endpoint_url:
+          type: string
+          format: uri
+        credentials:
+          type: object
+          description: Agent-specific credentials (encrypted at rest, never returned)
+          properties:
+            api_key:
+              type: string
+            traction_tenant_id:
+              type: string
+          required: [api_key]
+
+    UpdateConnectorRequest:
+      type: object
+      properties:
+        endpoint_url:
+          type: string
+          format: uri
+        credentials:
+          type: object
+          description: New credentials (rotates existing)
+          properties:
+            api_key:
+              type: string
+
+    # ─── Credential Definition ───────────────────────────────────────
+    CredentialDefinition:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        format:
+          $ref: "#/components/schemas/CredentialFormat"
+        schema_definition:
+          type: object
+          description: Format-specific schema definition
+        external_id:
+          type: string
+          nullable: true
+          description: Ledger/registry reference (e.g., cred_def_id)
+        connector_type:
+          $ref: "#/components/schemas/ConnectorType"
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CredentialFormat:
+      type: string
+      enum: [anoncreds, sd-jwt, mdl, w3c-vc]
+
+    CreateCredentialDefinitionRequest:
+      type: object
+      required: [name, format, schema_definition, connector_type]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        format:
+          $ref: "#/components/schemas/CredentialFormat"
+        schema_definition:
+          type: object
+          description: |
+            Format-specific schema.
+            - AnonCreds: { attr_names: string[], schema_name, schema_version }
+            - SD-JWT: JSON Schema object
+            - W3C VC: { @context: [], type: [], credentialSubject: {} }
+        connector_type:
+          $ref: "#/components/schemas/ConnectorType"
+        metadata:
+          type: object
+
+    # ─── Issuance Profile ────────────────────────────────────────────
+    IssuanceProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+          nullable: true
+        credential_definition_id:
+          type: string
+          format: uuid
+        connector_id:
+          type: string
+          format: uuid
+        format:
+          $ref: "#/components/schemas/CredentialFormat"
+        attribute_schema:
+          type: object
+          description: Declares attributes the consumer must supply
+        defaults:
+          type: object
+          nullable: true
+          description: Pre-filled attribute values
+        display:
+          type: object
+          nullable: true
+          description: UI/metadata for rendering
+          properties:
+            name:
+              type: string
+            description:
+              type: string
+            locale:
+              type: string
+            background_color:
+              type: string
+            logo_url:
+              type: string
+              format: uri
+        metadata:
+          type: object
+          nullable: true
+          description: Extensible metadata (OCA bundles, trust framework tags, etc.)
+        protocol_hint:
+          $ref: "#/components/schemas/ProtocolHint"
+        status:
+          $ref: "#/components/schemas/ProfileStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateIssuanceProfileRequest:
+      type: object
+      required: [name, version, credential_definition_id, attribute_schema]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        version:
+          type: string
+          minLength: 1
+          maxLength: 20
+        description:
+          type: string
+          maxLength: 500
+        credential_definition_id:
+          type: string
+          format: uuid
+        connector_id:
+          type: string
+          format: uuid
+          description: If omitted, uses tenant's default_connector
+        attribute_schema:
+          type: object
+          description: Attribute definitions (names, types, required flags)
+        defaults:
+          type: object
+        display:
+          type: object
+        metadata:
+          type: object
+        protocol_hint:
+          $ref: "#/components/schemas/ProtocolHint"
+
+    UpdateIssuanceProfileRequest:
+      type: object
+      properties:
+        description:
+          type: string
+        defaults:
+          type: object
+        display:
+          type: object
+        metadata:
+          type: object
+        protocol_hint:
+          $ref: "#/components/schemas/ProtocolHint"
+
+    ProfileStatus:
+      type: string
+      enum: [draft, published, deprecated]
+
+    ProtocolHint:
+      type: string
+      description: |
+        Protocol hint for delivery. Valid values depend on context:
+        - Issuance profiles: didcomm, oid4vci, auto
+        - Verification profiles: didcomm, oid4vp, auto
+        Server validates that the value is appropriate for the profile type.
+      enum: [didcomm, oid4vci, oid4vp, auto]
+      default: auto
+
+    # ─── Verification Profile ────────────────────────────────────────
+    VerificationProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        issuance_profile_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+          nullable: true
+        presentation_definition:
+          type: object
+          description: DIF Presentation Exchange format
+        requested_attributes:
+          type: array
+          items:
+            type: string
+        predicates:
+          type: array
+          nullable: true
+          items:
+            type: object
+            properties:
+              attribute:
+                type: string
+              condition:
+                type: string
+                enum: ["<", "<=", ">=", ">", "=="]
+              value:
+                type: string
+        metadata:
+          type: object
+          nullable: true
+        public:
+          type: boolean
+          default: false
+        protocol_hint:
+          $ref: "#/components/schemas/ProtocolHint"
+        status:
+          $ref: "#/components/schemas/ProfileStatus"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateVerificationProfileRequest:
+      type: object
+      required: [name, version, issuance_profile_id, presentation_definition]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        version:
+          type: string
+          minLength: 1
+          maxLength: 20
+        description:
+          type: string
+          maxLength: 500
+        issuance_profile_id:
+          type: string
+          format: uuid
+        presentation_definition:
+          type: object
+          description: DIF Presentation Exchange object
+        predicates:
+          type: array
+          items:
+            type: object
+            properties:
+              attribute:
+                type: string
+              condition:
+                type: string
+              value:
+                type: string
+        metadata:
+          type: object
+        public:
+          type: boolean
+          default: false
+        protocol_hint:
+          $ref: "#/components/schemas/ProtocolHint"
+
+    UpdateVerificationProfileRequest:
+      type: object
+      properties:
+        description:
+          type: string
+        presentation_definition:
+          type: object
+        predicates:
+          type: array
+          items:
+            type: object
+        metadata:
+          type: object
+        public:
+          type: boolean
+        protocol_hint:
+          $ref: "#/components/schemas/ProtocolHint"
+
+    # ─── Credential Operations ───────────────────────────────────────
+    OfferCredentialRequest:
+      type: object
+      description: |
+        Either `profile_id` or `credential_definition_id` + `format` must be provided (not both).
+        `connection_id` determines delivery protocol (DIDComm if present, OID4VCI if absent).
+      properties:
+        profile_id:
+          type: string
+          description: UUID or "name/version" string (e.g., "drivers-license/1.0")
+        credential_definition_id:
+          type: string
+          format: uuid
+          description: Legacy mode — direct cred def reference (bypasses profile)
+        format:
+          $ref: "#/components/schemas/CredentialFormat"
+        connection_id:
+          type: string
+          format: uuid
+          description: Target connection (DIDComm). Omit for OID4VCI (post-MVP).
+        attributes:
+          type: object
+          additionalProperties: true
+          description: Credential claim values
+
+    OfferCredentialBatchRequest:
+      type: object
+      required: [items]
+      properties:
+        profile_id:
+          type: string
+          description: UUID or "name/version" — applied to all items
+        credential_definition_id:
+          type: string
+          format: uuid
+          description: Legacy mode (alternative to profile_id)
+        format:
+          $ref: "#/components/schemas/CredentialFormat"
+        items:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            type: object
+            required: [connection_id, attributes]
+            properties:
+              connection_id:
+                type: string
+                format: uuid
+              attributes:
+                type: object
+                additionalProperties: true
+
+    RequestPresentationRequest:
+      type: object
+      description: |
+        Either `verification_profile_id` or `presentation_definition` + `format` must be provided.
+      properties:
+        verification_profile_id:
+          type: string
+          description: UUID or "name/version" string
+        presentation_definition:
+          type: object
+          description: DIF Presentation Exchange object (raw mode)
+        format:
+          $ref: "#/components/schemas/CredentialFormat"
+        connection_id:
+          type: string
+          format: uuid
+          description: Target connection (DIDComm). Omit for OID4VP (post-MVP).
+
+    # ─── Connection ──────────────────────────────────────────────────
+    Connection:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        external_connection_id:
+          type: string
+        their_label:
+          type: string
+          nullable: true
+        their_did:
+          type: string
+          nullable: true
+        state:
+          $ref: "#/components/schemas/ConnectionState"
+        connector_type:
+          $ref: "#/components/schemas/ConnectorType"
+        protocol:
+          $ref: "#/components/schemas/ConnectionProtocol"
+        metadata:
+          type: object
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    ConnectionState:
+      type: string
+      enum: [invited, requested, responded, active, completed, abandoned]
+
+    ConnectionProtocol:
+      type: string
+      enum: [didcomm-v1, didcomm-v2, openid4vc]
+
+    CreateConnectionRequest:
+      type: object
+      description: |
+        Creates a new connection. Two modes:
+        - **Create invitation**: omit `invitation_url` — generates a new invitation.
+        - **Accept invitation**: provide `invitation_url` — accepts an existing invitation from another party.
+      properties:
+        invitation_url:
+          type: string
+          format: uri
+          description: URL of an existing invitation to accept. If provided, creates a connection by accepting this invitation rather than generating a new one.
+        label:
+          type: string
+          description: Human-readable label for the invitation (used when creating)
+        protocol:
+          $ref: "#/components/schemas/ConnectionProtocol"
+        metadata:
+          type: object
+
+    # ─── Operation ───────────────────────────────────────────────────
+    Operation:
+      type: object
+      description: |
+        Uniform envelope for all async and sync operations. The `result` field
+        semantics depend on `(type, state)`.
+      required: [id, type, state, created_at, updated_at, result]
+      properties:
+        id:
+          type: string
+          format: uuid
+        batch_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: |
+            UUID of the parent batch operation. Present only on child operations
+            created by a batch issuance or revocation request (`credential.offer-batch`,
+            `credential.revoke-batch`). Use this to navigate to the parent via
+            `GET /operations/{batch_id}`.
+        type:
+          type: string
+          description: |
+            Operation type. Known values:
+            `credential.offer`, `credential.offer-batch`,
+            `credential.revoke`, `credential.revoke-batch`,
+            `presentation.request`, `connection.create`
+          examples:
+            - credential.offer
+            - credential.offer-batch
+            - credential.revoke
+            - credential.revoke-batch
+            - presentation.request
+            - connection.create
+        state:
+          $ref: "#/components/schemas/OperationState"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        result:
+          nullable: true
+          description: |
+            State-dependent result:
+            - pending/processing: null
+            - completed: operation-type-specific data
+            - failed: { code, message }
+            - batch processing: { total, completed, failed, pending }
+            - batch completed: { total, completed, failed, errors }
+
+    OperationState:
+      type: string
+      enum: [pending, processing, completed, failed]
+
+    # ─── Webhook ─────────────────────────────────────────────────────
+    WebhookRegistration:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        events:
+          type: array
+          items:
+            type: string
+            enum:
+              - credential.issued
+              - credential.verified
+              - credential.accepted
+              - credential.rejected
+              - credential.revoked
+              - connection.established
+        active:
+          type: boolean
+        consecutive_failures:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+
+    CreateWebhookRequest:
+      type: object
+      required: [url, events]
+      properties:
+        url:
+          type: string
+          format: uri
+          description: HTTPS endpoint to receive webhook payloads
+        events:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - credential.issued
+              - credential.verified
+              - credential.accepted
+              - credential.rejected
+              - credential.revoked
+              - connection.established
+
+    # ─── OAuth Client ────────────────────────────────────────────────
+    Client:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        client_id:
+          type: string
+        name:
+          type: string
+        scopes:
+          type: array
+          items:
+            type: string
+        grant_types:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    ClientWithSecret:
+      allOf:
+        - $ref: "#/components/schemas/Client"
+        - type: object
+          properties:
+            client_secret:
+              type: string
+              description: "Shown ONCE at creation/rotation. Cannot be retrieved again."
+
+    CreateClientRequest:
+      type: object
+      required: [name, scopes]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        scopes:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum:
+              - credentials:offer
+              - credentials:verify
+              - credentials:hold
+              - credentials:revoke
+              - connections:manage
+              - profiles:manage
+              - users:manage
+              - clients:manage
+              - logs:read
+              - tenants:admin
+
+    # ─── Credential ─────────────────────────────────────────────────
+    Credential:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        issuance_profile_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: "NULL when issued via legacy mode (credential_definition_id + format direct)"
+        connection_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: "NULL for OID4VCI/connectionless issuance"
+        connector_id:
+          type: string
+          format: uuid
+        external_id:
+          type: string
+          nullable: true
+          description: Adapter-assigned exchange ID
+        format:
+          $ref: "#/components/schemas/CredentialFormat"
+        state:
+          type: string
+          enum: [offered, issued, revoked, expired]
+        operation_id:
+          type: string
+          format: uuid
+          description: The offer operation that created this credential
+        metadata:
+          type: object
+          nullable: true
+          description: Adapter-specific data (legacy mode stores credential_definition_id here)
+        issued_at:
+          type: string
+          format: date-time
+          nullable: true
+        revoked_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    # ─── Audit Log ───────────────────────────────────────────────────
+    AuditLogEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        tenant_id:
+          type: string
+          format: uuid
+        actor_id:
+          type: string
+        actor_type:
+          type: string
+          enum: [user, system, client]
+        action:
+          type: string
+          enum: [issue, verify, hold, revoke, create, update, delete, login, token_grant]
+        resource_type:
+          type: string
+        resource_id:
+          type: string
+          format: uuid
+        operation_id:
+          type: string
+          format: uuid
+          nullable: true
+        metadata:
+          type: object
+          description: Additional context (e.g., changed fields, error details)
+        ip_address:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    # ─── Tenant Dead-letter Job ────────────────────────────────────
+    TenantDeadLetterJob:
+      type: object
+      description: |
+        A pg-boss dead-letter job scoped to the authenticated tenant.
+        The `data` object is redacted of any sensitive fields (connector secrets, raw credentials)
+        before being returned — only correlation IDs and error context are exposed.
+      required: [id, queue, failed_at, error]
+      properties:
+        id:
+          type: string
+          description: pg-boss job UUID
+        queue:
+          type: string
+          enum: [credential.state-update, webhook.dispatch, audit.write, credential.bulk-item]
+          description: The queue this job belonged to
+        failed_at:
+          type: string
+          format: date-time
+          description: Timestamp of the final failure (after all retries exhausted)
+        error:
+          type: string
+          description: Error message from the last failed attempt
+        retry_count:
+          type: integer
+          description: Number of attempts made before the job entered dead-letter
+        correlation:
+          type: object
+          description: Safe correlation identifiers extracted from the job payload
+          properties:
+            operation_id:
+              type: string
+              format: uuid
+              nullable: true
+            external_id:
+              type: string
+              nullable: true
+              description: Agent exchange ID (credential_exchange_id, presentation_exchange_id, etc.)
+            webhook_id:
+              type: string
+              format: uuid
+              nullable: true
+              description: Webhook registration ID (for webhook.dispatch jobs)
+
+    # ─── Log Entry ───────────────────────────────────────────────────
+    LogEntry:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        level:
+          type: string
+          enum: [debug, info, warn, error]
+        message:
+          type: string
+        source:
+          type: string
+          enum: [api, "adapter:traction", "adapter:credo", webhook]
+        operation_id:
+          type: string
+          format: uuid
+          nullable: true
+        request_id:
+          type: string
+          format: uuid
+          nullable: true
+        metadata:
+          type: object
+          description: Additional structured fields (duration_ms, error_code, etc.)
+
+    # ─── Discovery ───────────────────────────────────────────────────
+    IssuerMetadata:
+      type: object
+      description: OID4VCI Credential Issuer Metadata (§10.2 aligned)
+      properties:
+        credential_issuer:
+          type: string
+          format: uri
+        credential_configurations_supported:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              format:
+                type: string
+              display:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    locale:
+                      type: string
+              credential_definition:
+                type: object
+                properties:
+                  schema:
+                    type: object
+              claims:
+                type: object
+                additionalProperties:
+                  type: object
+                  properties:
+                    display:
+                      type: array
+                      items:
+                        type: object

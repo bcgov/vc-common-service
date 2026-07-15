@@ -77,7 +77,7 @@ OpenShift. Key characteristics:
 | nameOverride | string | `""` | Override the chart name |
 | networkPolicy.database.enabled | bool | `true` | Allow API/Worker egress to PostgreSQL |
 | networkPolicy.database.namespaceSelector | object | `{}` | Namespace selector matching the database namespace |
-| networkPolicy.database.podSelector | object | `{}` | Pod selector matching the database pods |
+| networkPolicy.database.podSelector | object | `{}` | Pod selector matching the database pods. When both podSelector and namespaceSelector are empty, egress is allowed to any destination on the database port. Set these in per-env values. |
 | networkPolicy.database.port | int | `5432` | Database port |
 | networkPolicy.dnsEgress.enabled | bool | `true` | Allow DNS egress (required whenever any egress rule is enabled) |
 | networkPolicy.dnsEgress.port | int | `53` | DNS port |
