@@ -26,8 +26,8 @@ The [Values](#values) section lists all configurable parameters.
 This chart deploys the VC Common Service (a NestJS modular monolith) to BC Gov
 OpenShift. Key characteristics:
 
-- **API Deployment** — HTTP service on container port `3000`; liveness probe on
-  `/health/live` and readiness probe on `/health/ready`.
+- **API Deployment** — HTTP service on container port `3000`; liveness and
+  readiness probes on `/health/live`.
 - **Migrations** — run as an init container in the API pod (same image, overridden
   command), gated by `migrations.enabled`.
 - **Worker Deployment** — the same image with entrypoint `node dist/worker.js`
@@ -40,11 +40,6 @@ OpenShift. Key characteristics:
   explicit egress to PostgreSQL/Keycloak, with a DNS-allow policy so hostname
   resolution keeps working once egress rules are in effect.
 
-### GitOps note (Argo CD / Flux)
-
-When `secret.create=true`, the chart uses `lookup` to preserve generated values
-across upgrades. If your GitOps renderer cannot perform `lookup` during dry-runs,
-pre-create the Secret and reference it via `secret.existingSecret` instead.
 
 {{ template "chart.maintainersSection" . }}
 

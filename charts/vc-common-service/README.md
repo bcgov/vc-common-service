@@ -26,8 +26,8 @@ The [Values](#values) section lists all configurable parameters.
 This chart deploys the VC Common Service (a NestJS modular monolith) to BC Gov
 OpenShift. Key characteristics:
 
-- **API Deployment** — HTTP service on container port `3000`; liveness probe on
-  `/health/live` and readiness probe on `/health/ready`.
+- **API Deployment** — HTTP service on container port `3000`; liveness and
+  readiness probes on `/health/live`.
 - **Migrations** — run as an init container in the API pod (same image, overridden
   command), gated by `migrations.enabled`.
 - **Worker Deployment** — the same image with entrypoint `node dist/worker.js`
@@ -39,12 +39,6 @@ OpenShift. Key characteristics:
 - **NetworkPolicies** — restrict ingress to the OpenShift router and declare
   explicit egress to PostgreSQL/Keycloak, with a DNS-allow policy so hostname
   resolution keeps working once egress rules are in effect.
-
-### GitOps note (Argo CD / Flux)
-
-When `secret.create=true`, the chart uses `lookup` to preserve generated values
-across upgrades. If your GitOps renderer cannot perform `lookup` during dry-runs,
-pre-create the Secret and reference it via `secret.existingSecret` instead.
 
 ## Maintainers
 
@@ -61,8 +55,6 @@ pre-create the Secret and reference it via `secret.existingSecret` instead.
 | autoscaling.maxReplicas | int | `3` | Maximum API replicas |
 | autoscaling.minReplicas | int | `1` | Minimum API replicas |
 | autoscaling.targetCPUUtilizationPercentage | int | `80` | Target average CPU utilization (percentage) |
-| commonAnnotations | object | `{}` | Annotations added to every resource |
-| commonLabels | object | `{}` | Labels added to every resource |
 | config | object | `{"DB_HOST":"","DB_LOGGING":"false","DB_NAME":"vc_common_service","DB_PORT":"5432","DB_SYNCHRONIZE":"false","LOG_LEVEL":"info","NODE_ENV":"production","PORT":"3000"}` | Non-secret application configuration, rendered into a ConfigMap and injected as environment variables into all containers. |
 | extraEnv | list | `[]` | Extra plain environment variables appended to every container (name/value list) |
 | extraEnvFrom | list | `[]` | Extra envFrom sources (configMapRef/secretRef) for every container |
@@ -83,9 +75,7 @@ pre-create the Secret and reference it via `secret.existingSecret` instead.
 | migrations.enabled | bool | `false` | Run database migrations as an init container in the API pod |
 | migrations.resources | object | `{"limits":{"cpu":"250m","memory":"256Mi"},"requests":{"cpu":"25m","memory":"128Mi"}}` | Resource requests/limits for the migrations init container |
 | nameOverride | string | `""` | Override the chart name |
-| namespaceOverride | string | `""` | Override the namespace resources are deployed into (defaults to the release namespace) |
 | networkPolicy.database.enabled | bool | `true` | Allow API/Worker egress to PostgreSQL |
-| networkPolicy.database.extraEgress | list | `[]` | Extra egress rules appended to the database policy |
 | networkPolicy.database.namespaceSelector | object | `{}` | Namespace selector matching the database namespace |
 | networkPolicy.database.podSelector | object | `{}` | Pod selector matching the database pods |
 | networkPolicy.database.port | int | `5432` | Database port |
@@ -93,10 +83,8 @@ pre-create the Secret and reference it via `secret.existingSecret` instead.
 | networkPolicy.dnsEgress.port | int | `53` | DNS port |
 | networkPolicy.enabled | bool | `true` | Enable NetworkPolicies |
 | networkPolicy.ingress.enabled | bool | `true` | Allow ingress to the API from the OpenShift router |
-| networkPolicy.ingress.extraIngress | list | `[]` | Extra ingress rules appended to the router policy |
 | networkPolicy.ingress.routerNamespaceSelector | object | `{"policy-group.network.openshift.io/ingress":""}` | Namespace selector matching the OpenShift router namespace |
 | networkPolicy.keycloak.enabled | bool | `false` | Allow API egress to Keycloak (upstream IdP) |
-| networkPolicy.keycloak.extraEgress | list | `[]` | Extra egress rules appended to the Keycloak policy |
 | networkPolicy.keycloak.namespaceSelector | object | `{}` | Namespace selector matching the Keycloak namespace |
 | networkPolicy.keycloak.podSelector | object | `{}` | Pod selector matching the Keycloak pods |
 | networkPolicy.keycloak.port | int | `443` | Keycloak port |
@@ -104,7 +92,7 @@ pre-create the Secret and reference it via `secret.existingSecret` instead.
 | podAnnotations | object | `{}` | Annotations added to the API/Worker pods |
 | podLabels | object | `{}` | Labels added to the API/Worker pods |
 | podSecurityContext | object | `{}` | Pod security context. On BC Gov OpenShift the restricted-v2 SCC assigns UID/fsGroup/SELinux automatically; leave empty unless you must pin values. |
-| readinessProbe | object | `{"failureThreshold":3,"httpGet":{"path":"/health/ready","port":"http"},"initialDelaySeconds":10,"periodSeconds":10,"timeoutSeconds":3}` | Readiness probe. `/health/ready` gains dependency checks via OB-06. |
+| readinessProbe | object | `{"failureThreshold":3,"httpGet":{"path":"/health/live","port":"http"},"initialDelaySeconds":10,"periodSeconds":10,"timeoutSeconds":3}` | Readiness probe. Uses `/health/live` until a dedicated readiness endpoint is added. |
 | replicaCount | int | `1` | Number of API pod replicas (ignored when `autoscaling.enabled=true`) |
 | resources | object | `{"limits":{"cpu":"250m","memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Resource requests and limits for the API container |
 | route.annotations | object | `{}` | Additional annotations for the Route |
@@ -114,11 +102,9 @@ pre-create the Secret and reference it via `secret.existingSecret` instead.
 | route.tls.enabled | bool | `true` | Enable TLS on the Route |
 | route.tls.insecureEdgeTerminationPolicy | string | `"Redirect"` | Policy for insecure (HTTP) traffic |
 | route.tls.termination | string | `"edge"` | TLS termination type |
-| route.wildcardPolicy | string | `"None"` | Route wildcard policy |
 | secret.create | bool | `false` | Create a chart-managed Secret from the values below |
 | secret.data | object | `{"DB_PASSWORD":"","DB_USERNAME":""}` | Non-generated key/values placed into the chart-managed Secret |
 | secret.existingSecret | string | `""` | Name of an existing Secret to consume for env vars |
-| secret.generated | object | `{}` | Keys auto-generated when missing, mapping key -> length in chars |
 | secret.retainOnUninstall | bool | `true` | Keep the chart-managed Secret when the release is uninstalled |
 | securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":false,"runAsNonRoot":true}` | Container security context applied to all containers |
 | service.port | int | `8080` | Service port exposed to the cluster |

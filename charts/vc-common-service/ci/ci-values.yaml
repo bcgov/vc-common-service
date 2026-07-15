@@ -26,8 +26,6 @@ secret:
   data:
     DB_USERNAME: ci-user
     DB_PASSWORD: ci-pass
-  generated:
-    WEBHOOK_HMAC_SECRET: 32
 
 networkPolicy:
   enabled: true

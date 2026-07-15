@@ -3,10 +3,9 @@ apiVersion: route.openshift.io/v1
 kind: Route
 metadata:
   name: {{ include "vc-common-service.fullname" . }}
-  namespace: {{ include "vc-common-service.namespace" . }}
   labels:
     {{- include "vc-common-service.labels" . | nindent 4 }}
-  {{- with (merge (dict) .Values.route.annotations .Values.commonAnnotations) }}
+  {{- with .Values.route.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -30,5 +29,5 @@ spec:
     insecureEdgeTerminationPolicy: {{ . }}
     {{- end }}
   {{- end }}
-  wildcardPolicy: {{ .Values.route.wildcardPolicy | default "None" }}
+  wildcardPolicy: None
 {{- end }}
