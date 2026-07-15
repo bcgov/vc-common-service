@@ -12,6 +12,7 @@ version: 0.1.0
 appVersion: "0.0.1"
 
 home: https://github.com/bcgov/vc-common-service
+icon: https://avatars.githubusercontent.com/u/916280?s=200&v=4
 sources:
   - https://github.com/bcgov/vc-common-service
 maintainers:

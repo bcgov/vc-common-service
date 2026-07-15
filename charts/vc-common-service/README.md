@@ -1,0 +1,149 @@
+# vc-common-service
+
+![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 0.0.1](https://img.shields.io/badge/AppVersion-0.0.1-informational?style=flat-square)
+
+A Helm chart to deploy the VC Common Service (NestJS) on BC Gov OpenShift
+
+## Prerequisites
+
+- Kubernetes 1.25+ / OpenShift 4.12+
+- Helm 3.8.0+
+- An external PostgreSQL database and (optionally) a Keycloak instance
+- A pre-provisioned `Secret` with database credentials (or set `secret.create=true`)
+
+## Installing the Chart
+
+```console
+helm install vc-common-service ./charts/vc-common-service \
+  -n <namespace> \
+  -f charts/vc-common-service/values-dev.yaml
+```
+
+The [Values](#values) section lists all configurable parameters.
+
+## Architecture
+
+This chart deploys the VC Common Service (a NestJS modular monolith) to BC Gov
+OpenShift. Key characteristics:
+
+- **API Deployment** — HTTP service on container port `3000`; liveness probe on
+  `/health/live` and readiness probe on `/health/ready`.
+- **Migrations** — run as an init container in the API pod (same image, overridden
+  command), gated by `migrations.enabled`.
+- **Worker Deployment** — the same image with entrypoint `node dist/worker.js`
+  and its own HPA, gated by `worker.enabled`.
+- **Exposure** — an OpenShift `Route` by default; a Kubernetes `Ingress` is an
+  optional alternative.
+- **External dependencies** — PostgreSQL and Keycloak are treated as external,
+  shared services (consumed via env vars and a `Secret`).
+- **NetworkPolicies** — restrict ingress to the OpenShift router and declare
+  explicit egress to PostgreSQL/Keycloak, with a DNS-allow policy so hostname
+  resolution keeps working once egress rules are in effect.
+
+### GitOps note (Argo CD / Flux)
+
+When `secret.create=true`, the chart uses `lookup` to preserve generated values
+across upgrades. If your GitOps renderer cannot perform `lookup` during dry-runs,
+pre-create the Secret and reference it via `secret.existingSecret` instead.
+
+## Maintainers
+
+| Name | Email | Url |
+| ---- | ------ | --- |
+| bcgov |  | <https://github.com/bcgov> |
+
+## Values
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| affinity | object | `{}` | Affinity for API pods |
+| autoscaling.enabled | bool | `false` | Enable autoscaling for the API Deployment |
+| autoscaling.maxReplicas | int | `3` | Maximum API replicas |
+| autoscaling.minReplicas | int | `1` | Minimum API replicas |
+| autoscaling.targetCPUUtilizationPercentage | int | `80` | Target average CPU utilization (percentage) |
+| commonAnnotations | object | `{}` | Annotations added to every resource |
+| commonLabels | object | `{}` | Labels added to every resource |
+| config | object | `{"DB_HOST":"","DB_LOGGING":"false","DB_NAME":"vc_common_service","DB_PORT":"5432","DB_SYNCHRONIZE":"false","LOG_LEVEL":"info","NODE_ENV":"production","PORT":"3000"}` | Non-secret application configuration, rendered into a ConfigMap and injected as environment variables into all containers. |
+| extraEnv | list | `[]` | Extra plain environment variables appended to every container (name/value list) |
+| extraEnvFrom | list | `[]` | Extra envFrom sources (configMapRef/secretRef) for every container |
+| fullnameOverride | string | `""` | Override the fully qualified release name |
+| image.pullPolicy | string | `"IfNotPresent"` | Image pull policy |
+| image.registry | string | `"ghcr.io"` | Container image registry (optional; omitted from the ref when empty) |
+| image.repository | string | `"bcgov/vc-common-service"` | Container image repository. API, Worker and migrations share this image. |
+| image.tag | string | `""` | Image tag (defaults to the chart appVersion when empty) |
+| imagePullSecrets | list | `[]` | Names of pre-created image pull secrets, e.g. `[{ name: my-registry }]` |
+| ingress.annotations | object | `{}` | Ingress annotations |
+| ingress.className | string | `""` | Ingress class name |
+| ingress.enabled | bool | `false` | Expose the service via a Kubernetes Ingress |
+| ingress.hosts | list | `[{"host":"chart-example.local","paths":[{"path":"/","pathType":"Prefix"}]}]` | Ingress hosts and paths |
+| ingress.tls | list | `[]` | Ingress TLS configuration |
+| livenessProbe | object | `{"failureThreshold":3,"httpGet":{"path":"/health/live","port":"http"},"initialDelaySeconds":15,"periodSeconds":15,"timeoutSeconds":3}` | Liveness probe. IN-01 provides a minimal 200 at `/health/live`. |
+| migrations.args | list | `["dist/apps/vc-common-service/src/migrate.js"]` | Migration entrypoint args |
+| migrations.command | list | `["node"]` | Migration entrypoint command |
+| migrations.enabled | bool | `false` | Run database migrations as an init container in the API pod |
+| migrations.resources | object | `{"limits":{"cpu":"250m","memory":"256Mi"},"requests":{"cpu":"25m","memory":"128Mi"}}` | Resource requests/limits for the migrations init container |
+| nameOverride | string | `""` | Override the chart name |
+| namespaceOverride | string | `""` | Override the namespace resources are deployed into (defaults to the release namespace) |
+| networkPolicy.database.enabled | bool | `true` | Allow API/Worker egress to PostgreSQL |
+| networkPolicy.database.extraEgress | list | `[]` | Extra egress rules appended to the database policy |
+| networkPolicy.database.namespaceSelector | object | `{}` | Namespace selector matching the database namespace |
+| networkPolicy.database.podSelector | object | `{}` | Pod selector matching the database pods |
+| networkPolicy.database.port | int | `5432` | Database port |
+| networkPolicy.dnsEgress.enabled | bool | `true` | Allow DNS egress (required whenever any egress rule is enabled) |
+| networkPolicy.dnsEgress.port | int | `53` | DNS port |
+| networkPolicy.enabled | bool | `true` | Enable NetworkPolicies |
+| networkPolicy.ingress.enabled | bool | `true` | Allow ingress to the API from the OpenShift router |
+| networkPolicy.ingress.extraIngress | list | `[]` | Extra ingress rules appended to the router policy |
+| networkPolicy.ingress.routerNamespaceSelector | object | `{"policy-group.network.openshift.io/ingress":""}` | Namespace selector matching the OpenShift router namespace |
+| networkPolicy.keycloak.enabled | bool | `false` | Allow API egress to Keycloak (upstream IdP) |
+| networkPolicy.keycloak.extraEgress | list | `[]` | Extra egress rules appended to the Keycloak policy |
+| networkPolicy.keycloak.namespaceSelector | object | `{}` | Namespace selector matching the Keycloak namespace |
+| networkPolicy.keycloak.podSelector | object | `{}` | Pod selector matching the Keycloak pods |
+| networkPolicy.keycloak.port | int | `443` | Keycloak port |
+| nodeSelector | object | `{}` | Node selector for API pods |
+| podAnnotations | object | `{}` | Annotations added to the API/Worker pods |
+| podLabels | object | `{}` | Labels added to the API/Worker pods |
+| podSecurityContext | object | `{}` | Pod security context. On BC Gov OpenShift the restricted-v2 SCC assigns UID/fsGroup/SELinux automatically; leave empty unless you must pin values. |
+| readinessProbe | object | `{"failureThreshold":3,"httpGet":{"path":"/health/ready","port":"http"},"initialDelaySeconds":10,"periodSeconds":10,"timeoutSeconds":3}` | Readiness probe. `/health/ready` gains dependency checks via OB-06. |
+| replicaCount | int | `1` | Number of API pod replicas (ignored when `autoscaling.enabled=true`) |
+| resources | object | `{"limits":{"cpu":"250m","memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Resource requests and limits for the API container |
+| route.annotations | object | `{}` | Additional annotations for the Route |
+| route.enabled | bool | `true` | Expose the service via an OpenShift Route |
+| route.host | string | `""` | Route hostname (OpenShift generates one when empty) |
+| route.path | string | `""` | Optional explicit route path |
+| route.tls.enabled | bool | `true` | Enable TLS on the Route |
+| route.tls.insecureEdgeTerminationPolicy | string | `"Redirect"` | Policy for insecure (HTTP) traffic |
+| route.tls.termination | string | `"edge"` | TLS termination type |
+| route.wildcardPolicy | string | `"None"` | Route wildcard policy |
+| secret.create | bool | `false` | Create a chart-managed Secret from the values below |
+| secret.data | object | `{"DB_PASSWORD":"","DB_USERNAME":""}` | Non-generated key/values placed into the chart-managed Secret |
+| secret.existingSecret | string | `""` | Name of an existing Secret to consume for env vars |
+| secret.generated | object | `{}` | Keys auto-generated when missing, mapping key -> length in chars |
+| secret.retainOnUninstall | bool | `true` | Keep the chart-managed Secret when the release is uninstalled |
+| securityContext | object | `{"allowPrivilegeEscalation":false,"capabilities":{"drop":["ALL"]},"readOnlyRootFilesystem":false,"runAsNonRoot":true}` | Container security context applied to all containers |
+| service.port | int | `8080` | Service port exposed to the cluster |
+| service.targetPort | int | `3000` | Container port the NestJS app binds to (the `PORT` env) |
+| service.type | string | `"ClusterIP"` | Service type |
+| serviceAccount.annotations | object | `{}` | Annotations for the service account |
+| serviceAccount.automount | bool | `true` | Automatically mount the service account's API credentials |
+| serviceAccount.create | bool | `true` | Create a service account |
+| serviceAccount.name | string | `""` | Service account name (generated from the fullname when empty and `create` is true) |
+| tolerations | list | `[]` | Tolerations for API pods |
+| volumeMounts | list | `[]` | Extra volume mounts for the API/Worker containers |
+| volumes | list | `[]` | Extra volumes for the API/Worker pods |
+| worker.affinity | object | `{}` | Affinity for Worker pods |
+| worker.args | list | `["dist/worker.js"]` | Worker entrypoint args |
+| worker.autoscaling.enabled | bool | `false` | Enable autoscaling for the Worker Deployment |
+| worker.autoscaling.maxReplicas | int | `5` | Maximum Worker replicas |
+| worker.autoscaling.minReplicas | int | `1` | Minimum Worker replicas |
+| worker.autoscaling.targetCPUUtilizationPercentage | int | `80` | Target average CPU utilization (percentage) |
+| worker.command | list | `["node"]` | Worker entrypoint command |
+| worker.enabled | bool | `false` | Deploy the Worker |
+| worker.livenessProbe | object | `{}` | Liveness probe for the Worker (no HTTP server by default) |
+| worker.nodeSelector | object | `{}` | Node selector for Worker pods |
+| worker.podAnnotations | object | `{}` | Annotations added to Worker pods |
+| worker.podLabels | object | `{}` | Labels added to Worker pods |
+| worker.replicaCount | int | `1` | Worker replicas (ignored when `worker.autoscaling.enabled=true`) |
+| worker.resources | object | `{"limits":{"cpu":"250m","memory":"256Mi"},"requests":{"cpu":"50m","memory":"128Mi"}}` | Resource requests/limits for the Worker container |
+| worker.tolerations | list | `[]` | Tolerations for Worker pods |
+

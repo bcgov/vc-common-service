@@ -115,3 +115,19 @@ jobs:
           for env in dev test prod; do
             helm template rel vc-common-service -f vc-common-service/values-$env.yaml > /dev/null
           done
+      - name: yamllint (values and Chart.yaml)
+        run: |
+          pipx install yamllint || pip install yamllint
+          yamllint --strict -c .yamllint \
+            charts/vc-common-service/values.yaml \
+            charts/vc-common-service/values-dev.yaml \
+            charts/vc-common-service/values-test.yaml \
+            charts/vc-common-service/values-prod.yaml \
+            charts/vc-common-service/ci/ci-values.yaml \
+            charts/vc-common-service/Chart.yaml
+      - name: helm-docs (verify README is up to date)
+        run: |
+          GO111MODULE=on go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2
+          "$(go env GOPATH)/bin/helm-docs" --chart-search-root=charts --template-files=README.md.gotmpl
+          git diff --exit-code charts/vc-common-service/README.md \
+            || { echo "README.md is out of date. Run helm-docs and commit the result."; exit 1; }

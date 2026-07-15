@@ -5,8 +5,13 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "vc-common-service.fullname" . }}-allow-router
+  namespace: {{ include "vc-common-service.namespace" . }}
   labels:
     {{- include "vc-common-service.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   podSelector:
     matchLabels:
@@ -21,6 +26,9 @@ spec:
       ports:
         - protocol: TCP
           port: http
+    {{- with .Values.networkPolicy.ingress.extraIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}
 {{- if .Values.networkPolicy.database.enabled }}
 ---
@@ -28,8 +36,24 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "vc-common-service.fullname" . }}-egress-db
+  namespace: {{ include "vc-common-service.namespace" . }}
   labels:
-    {{- include "vc-common-service.labels" . | nindent 4 }}
+    helm.sh/chart: {{ include "vc-common-service.chart" . }}
+    app.kubernetes.io/name: {{ include "vc-common-service.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: database
+    {{- if .Chart.AppVersion }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    {{- end }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: {{ include "vc-common-service.name" . }}
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   # Applies to both API and Worker pods (matched by name + instance).
   podSelector:
@@ -56,6 +80,9 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.networkPolicy.database.port }}
+    {{- with .Values.networkPolicy.database.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}
 {{- if .Values.networkPolicy.keycloak.enabled }}
 ---
@@ -63,8 +90,13 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "vc-common-service.fullname" . }}-egress-keycloak
+  namespace: {{ include "vc-common-service.namespace" . }}
   labels:
     {{- include "vc-common-service.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   # Only the API reaches Keycloak (upstream IdP).
   podSelector:
@@ -91,6 +123,9 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.networkPolicy.keycloak.port }}
+    {{- with .Values.networkPolicy.keycloak.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}
 {{- if and .Values.networkPolicy.dnsEgress.enabled (or .Values.networkPolicy.database.enabled .Values.networkPolicy.keycloak.enabled) }}
 ---
@@ -98,11 +133,16 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: {{ include "vc-common-service.fullname" . }}-egress-dns
+  namespace: {{ include "vc-common-service.namespace" . }}
   labels:
     {{- include "vc-common-service.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   # Allow DNS resolution for all app pods. Required because declaring any egress
-  # rule otherwise implicitly denies all other egress — including cluster DNS,
+  # rule otherwise implicitly denies all other egress -- including cluster DNS,
   # which would break hostname resolution of the database and Keycloak.
   podSelector:
     matchLabels:

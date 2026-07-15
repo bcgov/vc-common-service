@@ -42,6 +42,18 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: {{ include "vc-common-service.name" . }}
+{{- with .Values.commonLabels }}
+{{ toYaml . }}
+{{- end }}
+{{- end }}
+
+{{/*
+Common annotations (rendered onto all resources that opt in).
+*/}}
+{{- define "vc-common-service.annotations" -}}
+{{- with .Values.commonAnnotations }}
+{{- toYaml . }}
+{{- end }}
 {{- end }}
 
 {{/*
@@ -71,6 +83,9 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: {{ include "vc-common-service.name" . }}
+{{- with .Values.commonLabels }}
+{{ toYaml . }}
+{{- end }}
 {{- end }}
 
 {{/*
@@ -80,6 +95,13 @@ Worker selector labels
 app.kubernetes.io/name: {{ include "vc-common-service.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/component: worker
+{{- end }}
+
+{{/*
+Namespace (allows override via .Values.namespaceOverride).
+*/}}
+{{- define "vc-common-service.namespace" -}}
+{{- default .Release.Namespace .Values.namespaceOverride -}}
 {{- end }}
 
 {{/*

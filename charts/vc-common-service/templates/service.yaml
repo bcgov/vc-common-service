@@ -2,8 +2,13 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "vc-common-service.fullname" . }}
+  namespace: {{ include "vc-common-service.namespace" . }}
   labels:
     {{- include "vc-common-service.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   type: {{ .Values.service.type }}
   ports:
