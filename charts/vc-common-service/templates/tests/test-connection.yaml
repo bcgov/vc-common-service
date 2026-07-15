@@ -10,8 +10,7 @@ spec:
   restartPolicy: Never
   containers:
     - name: wget
-      image: busybox
-      command: ['wget']
+      image: busybox:1.36.1
       args:
         - '--spider'
         - '-S'
