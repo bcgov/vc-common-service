@@ -62,9 +62,10 @@ spec:
             - /bin/sh
             - -c
           args:
-            - >-
-              until nc -z "$DB_HOST" "$DB_PORT"; do
-              echo "waiting for database $DB_HOST:$DB_PORT"; sleep 2; done
+            - |
+              timeout {{ .Values.migrations.waitForDB.timeoutSeconds }}s sh -c \
+                'until nc -z "$DB_HOST" "$DB_PORT"; do echo "waiting for database $DB_HOST:$DB_PORT"; sleep 2; done' \
+              || { echo "timed out after {{ .Values.migrations.waitForDB.timeoutSeconds }}s waiting for database $DB_HOST:$DB_PORT"; exit 1; }
           envFrom:
             {{- include "vc-common-service.envFrom" . | nindent 12 }}
       {{- end }}
