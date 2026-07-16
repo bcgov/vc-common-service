@@ -1,10 +1,13 @@
 import { PgBossService } from '@app/pg-boss';
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { ShutdownRegistry } from '../shutdown/shutdown-registry';
+
 import { JobsService } from './jobs.service';
 
 describe('JobsService', () => {
   let service: JobsService;
+  let shutdownRegistry: ShutdownRegistry;
 
   const send = jest.fn();
 
@@ -24,14 +27,24 @@ describe('JobsService', () => {
           provide: PgBossService,
           useValue: mockPgBossService,
         },
+        ShutdownRegistry,
       ],
     }).compile();
 
     service = module.get(JobsService);
+    shutdownRegistry = module.get(ShutdownRegistry);
   });
 
   it('should be defined', () => {
     expect(service).toBeDefined();
+  });
+
+  it('should register itself with shutdown registry on module init', () => {
+    const registerSpy = jest.spyOn(shutdownRegistry, 'register');
+
+    service.onModuleInit();
+
+    expect(registerSpy).toHaveBeenCalledWith(service);
   });
 
   it('should publish a job', async () => {
@@ -62,5 +75,14 @@ describe('JobsService', () => {
     await expect(service.publish('test-job', {})).rejects.toThrow(
       'send failed',
     );
+  });
+
+  it('should shutdown the boss service', async () => {
+    const stop = jest.fn().mockResolvedValue(undefined);
+    mockPgBossService.boss.stop = stop;
+
+    await service.shutdown();
+
+    expect(stop).toHaveBeenCalledTimes(1);
   });
 });

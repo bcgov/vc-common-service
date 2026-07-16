@@ -32,18 +32,4 @@ describe('PgBossService', () => {
     expect(start).toHaveBeenCalledTimes(1);
     expect(service.boss).toBe(mockBoss);
   });
-
-  it('stops pg-boss on module destroy', async () => {
-    service.boss = mockBoss as any;
-
-    await service.onModuleDestroy();
-
-    expect(stop).toHaveBeenCalledTimes(1);
-  });
-
-  it('does nothing on destroy when boss was never created', async () => {
-    await expect(service.onModuleDestroy()).resolves.toBeUndefined();
-
-    expect(stop).not.toHaveBeenCalled();
-  });
 });
