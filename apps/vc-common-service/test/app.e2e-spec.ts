@@ -1,13 +1,10 @@
 import { PgBossService } from '@app/pg-boss';
-import { INestApplication, Module } from '@nestjs/common';
+import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
 import { App } from 'supertest/types';
 
 import { AppModule } from './../src/app.module';
-
-@Module({})
-class MockDatabaseModule {}
 
 describe('AppController (e2e)', () => {
   let app: INestApplication<App>;
@@ -24,9 +21,6 @@ describe('AppController (e2e)', () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })
-      // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-member-access
-      .overrideModule(require('@app/database').DatabaseModule)
-      .useModule(MockDatabaseModule)
       .overrideProvider(PgBossService)
       .useValue({
         boss: mockBoss,
