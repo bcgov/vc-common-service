@@ -136,8 +136,8 @@ autoscaling:
   # -- Target average memory utilization (percentage)
   # targetMemoryUtilizationPercentage: 80
 
-# Database migrations run as an init container in the API pod (same image,
-# overridden command). Disabled until the migration runner command exists.
+# Database migrations run as a Helm hook Job (pre-install/pre-upgrade).
+# Disabled until the migration runner command exists.
 migrations:
   # -- Run database migrations as a pre-install/pre-upgrade Helm hook Job.
   # Runs exactly once per release before the app pods roll, avoiding the
@@ -162,8 +162,11 @@ migrations:
     weight: "-5"
     # -- Hook resource delete policy
     deletePolicy: "before-hook-creation,hook-succeeded"
-  # -- Number of retries before the migration Job is marked failed
+  # -- Number of retries before the migration Job is marked failed (2 retries = 3 total attempts)
   backoffLimit: 2
+  # -- Maximum seconds the migration Job may run before Kubernetes marks it failed.
+  # Prevents hung migrations (e.g. waiting on a lock) from blocking a release indefinitely.
+  activeDeadlineSeconds: 300
   # -- Emit an ArgoCD PreSync hook annotation so migrations also run under GitOps
   # (ArgoCD does not execute Helm hooks natively)
   argocd:
@@ -174,6 +177,8 @@ migrations:
     enabled: false
     image: busybox
     tag: "1.36"
+    # -- Maximum seconds to wait for the database before failing with a clear error
+    timeoutSeconds: 60
   # -- Resource requests/limits for the migration Job
   resources:
     requests:

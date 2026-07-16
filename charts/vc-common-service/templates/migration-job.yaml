@@ -28,6 +28,7 @@ metadata:
     {{- end }}
 spec:
   backoffLimit: {{ .Values.migrations.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
   template:
     metadata:
       labels:
