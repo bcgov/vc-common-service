@@ -12,7 +12,7 @@ and this chart adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.h
 - Initial Helm chart for deploying vc-common-service to BC Gov OpenShift.
 - API Deployment with templated resources and liveness/readiness probes on
   `/health/live`.
-- Database migrations as an init container in the API pod (gated by
+- Database migrations as a `pre-install`/`pre-upgrade` Helm hook Job (gated by
   `migrations.enabled`).
 - Worker Deployment sharing the same image with entrypoint `node dist/worker.js`
   and an independent HPA (gated by `worker.enabled`).
