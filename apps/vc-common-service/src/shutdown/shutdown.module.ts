@@ -6,6 +6,6 @@ import { GracefulShutdownService } from './shutdown.service';
 @Global()
 @Module({
   providers: [ShutdownRegistry, GracefulShutdownService],
-  exports: [ShutdownRegistry],
+  exports: [ShutdownRegistry, GracefulShutdownService],
 })
 export class ShutdownModule {}

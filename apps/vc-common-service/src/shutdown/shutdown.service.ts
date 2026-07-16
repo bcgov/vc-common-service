@@ -5,10 +5,12 @@ import { ShutdownRegistry } from './shutdown-registry';
 @Injectable()
 export class GracefulShutdownService implements BeforeApplicationShutdown {
   private readonly logger = new Logger(GracefulShutdownService.name);
+  private isShuttingDown = false;
 
   public constructor(private readonly registry: ShutdownRegistry) {}
 
   public async beforeApplicationShutdown(signal?: string) {
+    this.isShuttingDown = true;
     const participants = this.registry.getParticipants();
 
     for (const participant of participants) {
@@ -23,5 +25,11 @@ export class GracefulShutdownService implements BeforeApplicationShutdown {
         );
       }
     }
+
+    this.isShuttingDown = false;
+  }
+
+  public isInShutdown(): boolean {
+    return this.isShuttingDown;
   }
 }

@@ -160,4 +160,30 @@ describe('GracefulShutdownService', () => {
       await expect(service.beforeApplicationShutdown()).resolves.not.toThrow();
     });
   });
+
+  describe('isInShutdown', () => {
+    it('should return false initially', () => {
+      expect(service.isInShutdown()).toBe(false);
+    });
+
+    it('should return true during shutdown', async () => {
+      const slowParticipant: ShutdownParticipant = {
+        order: 1,
+        name: 'SlowParticipant',
+        shutdown: jest.fn(async () => {
+          // Check that isInShutdown is true while shutting down
+
+          // Wait a moment to simulate a slow shutdown
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          expect(service.isInShutdown()).toBe(true);
+        }),
+      };
+
+      registry.register(slowParticipant);
+
+      await service.beforeApplicationShutdown();
+
+      expect(service.isInShutdown()).toBe(false);
+    });
+  });
 });
