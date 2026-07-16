@@ -1300,7 +1300,7 @@ graph TB
 
 **Notes:**
 - API and Worker share the same container image; differentiated by entrypoint command
-- Migrations run as init container in the API pod
+- Migrations run as a `pre-install`/`pre-upgrade` Helm hook Job (single execution per release, before pods roll), not as a per-pod init container. This avoids concurrent migration runs across replicas and HPA scale-ups. The migration runner (`migrate.js`) should additionally wrap its run in a Postgres advisory lock (`pg_advisory_lock`/`pg_advisory_unlock`) as defence in depth, since TypeORM does not lock migrations by default. Under ArgoCD, enable `migrations.argocd.enabled` so the Job also carries a `PreSync` hook (Helm hooks are not executed by ArgoCD).
 - Horizontal scaling: API pods are stateless (scale freely); Worker pods use pg-boss `teamSize` + `teamConcurrency` for competing consumers
 - NetworkPolicy restricts ingress to routes only; inter-pod communication explicit
 

@@ -28,8 +28,11 @@ OpenShift. Key characteristics:
 
 - **API Deployment** — HTTP service on container port `3000`; liveness and
   readiness probes on `/health/live`.
-- **Migrations** — run as an init container in the API pod (same image, overridden
-  command), gated by `migrations.enabled`.
+- **Migrations** — run as a `pre-install`/`pre-upgrade` Helm hook Job (same image,
+  overridden command), gated by `migrations.enabled`. Running once per release
+  (rather than as a per-pod init container) avoids concurrent migration runs
+  across replicas and HPA scale-ups. Set `migrations.argocd.enabled=true` to also
+  emit a `PreSync` hook for ArgoCD/GitOps.
 - **Worker Deployment** — the same image with entrypoint `node dist/worker.js`
   and its own HPA, gated by `worker.enabled`.
 - **Exposure** — an OpenShift `Route` by default; a Kubernetes `Ingress` is an
@@ -70,10 +73,17 @@ OpenShift. Key characteristics:
 | ingress.hosts | list | `[{"host":"chart-example.local","paths":[{"path":"/","pathType":"Prefix"}]}]` | Ingress hosts and paths |
 | ingress.tls | list | `[]` | Ingress TLS configuration |
 | livenessProbe | object | `{"failureThreshold":3,"httpGet":{"path":"/health/live","port":"http"},"initialDelaySeconds":15,"periodSeconds":15,"timeoutSeconds":3}` | Liveness probe. IN-01 provides a minimal 200 at `/health/live`. |
+| migrations.argocd | object | `{"enabled":false}` | Emit an ArgoCD PreSync hook annotation so migrations also run under GitOps (ArgoCD does not execute Helm hooks natively) |
 | migrations.args | list | `["dist/apps/vc-common-service/src/migrate.js"]` | Migration entrypoint args |
+| migrations.backoffLimit | int | `2` | Number of retries before the migration Job is marked failed |
 | migrations.command | list | `["node"]` | Migration entrypoint command |
-| migrations.enabled | bool | `false` | Run database migrations as an init container in the API pod |
-| migrations.resources | object | `{"limits":{"cpu":"250m","memory":"256Mi"},"requests":{"cpu":"25m","memory":"128Mi"}}` | Resource requests/limits for the migrations init container |
+| migrations.enabled | bool | `false` | Run database migrations as a pre-install/pre-upgrade Helm hook Job. Runs exactly once per release before the app pods roll, avoiding the concurrent/every-boot execution that an init container would cause across replicas and HPA scale-ups. |
+| migrations.hook | object | `{"deletePolicy":"before-hook-creation,hook-succeeded","types":"pre-install,pre-upgrade","weight":"-5"}` | Helm hook configuration for the migration Job. `pre-install,pre-upgrade` is fail-closed: a failed migration aborts the release and the old version keeps serving. NOTE: the migration runner (migrate.js) should still wrap its run in a Postgres advisory lock (pg_advisory_lock/unlock) as defence in depth, since TypeORM does not lock migrations by default. |
+| migrations.hook.deletePolicy | string | `"before-hook-creation,hook-succeeded"` | Hook resource delete policy |
+| migrations.hook.types | string | `"pre-install,pre-upgrade"` | Helm hook types that trigger the migration Job |
+| migrations.hook.weight | string | `"-5"` | Hook execution order (lower weights run earlier) |
+| migrations.resources | object | `{"limits":{"cpu":"250m","memory":"256Mi"},"requests":{"cpu":"25m","memory":"128Mi"}}` | Resource requests/limits for the migration Job |
+| migrations.waitForDB | object | `{"enabled":false,"image":"busybox","tag":"1.36"}` | Optional init container that blocks the migration until the database (DB_HOST:DB_PORT from the app config) is reachable |
 | nameOverride | string | `""` | Override the chart name |
 | networkPolicy.database.enabled | bool | `true` | Allow API/Worker egress to PostgreSQL |
 | networkPolicy.database.namespaceSelector | object | `{}` | Namespace selector matching the database namespace |

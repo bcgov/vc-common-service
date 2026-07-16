@@ -23,7 +23,7 @@ Access the API:
 Components enabled:
   API Deployment:     yes (replicas: {{ if .Values.autoscaling.enabled }}HPA {{ .Values.autoscaling.minReplicas }}-{{ .Values.autoscaling.maxReplicas }}{{ else }}{{ .Values.replicaCount }}{{ end }})
   Worker Deployment:  {{ if .Values.worker.enabled }}yes (replicas: {{ if .Values.worker.autoscaling.enabled }}HPA {{ .Values.worker.autoscaling.minReplicas }}-{{ .Values.worker.autoscaling.maxReplicas }}{{ else }}{{ .Values.worker.replicaCount }}{{ end }}){{ else }}no{{ end }}
-  Migrations init:    {{ if .Values.migrations.enabled }}yes{{ else }}no{{ end }}
+  Migration hook Job: {{ if .Values.migrations.enabled }}yes ({{ .Values.migrations.hook.types }}){{ else }}no{{ end }}
   NetworkPolicy:      {{ if .Values.networkPolicy.enabled }}yes{{ else }}no{{ end }}
 
 {{- if not (or .Values.secret.existingSecret .Values.secret.create) }}

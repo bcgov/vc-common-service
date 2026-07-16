@@ -139,7 +139,10 @@ autoscaling:
 # Database migrations run as an init container in the API pod (same image,
 # overridden command). Disabled until the migration runner command exists.
 migrations:
-  # -- Run database migrations as an init container in the API pod
+  # -- Run database migrations as a pre-install/pre-upgrade Helm hook Job.
+  # Runs exactly once per release before the app pods roll, avoiding the
+  # concurrent/every-boot execution that an init container would cause across
+  # replicas and HPA scale-ups.
   enabled: false
   # -- Migration entrypoint command
   command:
@@ -147,7 +150,31 @@ migrations:
   # -- Migration entrypoint args
   args:
     - dist/apps/vc-common-service/src/migrate.js
-  # -- Resource requests/limits for the migrations init container
+  # -- Helm hook configuration for the migration Job. `pre-install,pre-upgrade`
+  # is fail-closed: a failed migration aborts the release and the old version
+  # keeps serving. NOTE: the migration runner (migrate.js) should still wrap its
+  # run in a Postgres advisory lock (pg_advisory_lock/unlock) as defence in
+  # depth, since TypeORM does not lock migrations by default.
+  hook:
+    # -- Helm hook types that trigger the migration Job
+    types: "pre-install,pre-upgrade"
+    # -- Hook execution order (lower weights run earlier)
+    weight: "-5"
+    # -- Hook resource delete policy
+    deletePolicy: "before-hook-creation,hook-succeeded"
+  # -- Number of retries before the migration Job is marked failed
+  backoffLimit: 2
+  # -- Emit an ArgoCD PreSync hook annotation so migrations also run under GitOps
+  # (ArgoCD does not execute Helm hooks natively)
+  argocd:
+    enabled: false
+  # -- Optional init container that blocks the migration until the database
+  # (DB_HOST:DB_PORT from the app config) is reachable
+  waitForDB:
+    enabled: false
+    image: busybox
+    tag: "1.36"
+  # -- Resource requests/limits for the migration Job
   resources:
     requests:
       cpu: 25m

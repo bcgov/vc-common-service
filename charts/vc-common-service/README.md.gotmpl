@@ -28,8 +28,11 @@ OpenShift. Key characteristics:
 
 - **API Deployment** — HTTP service on container port `3000`; liveness and
   readiness probes on `/health/live`.
-- **Migrations** — run as an init container in the API pod (same image, overridden
-  command), gated by `migrations.enabled`.
+- **Migrations** — run as a `pre-install`/`pre-upgrade` Helm hook Job (same image,
+  overridden command), gated by `migrations.enabled`. Running once per release
+  (rather than as a per-pod init container) avoids concurrent migration runs
+  across replicas and HPA scale-ups. Set `migrations.argocd.enabled=true` to also
+  emit a `PreSync` hook for ArgoCD/GitOps.
 - **Worker Deployment** — the same image with entrypoint `node dist/worker.js`
   and its own HPA, gated by `worker.enabled`.
 - **Exposure** — an OpenShift `Route` by default; a Kubernetes `Ingress` is an
