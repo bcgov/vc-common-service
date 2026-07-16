@@ -43,13 +43,5 @@ export class CreateTenantEntity1784231917556 implements MigrationInterface {
     await queryRunner.query(`
       DROP TYPE tenant_status;
     `);
-
-    await queryRunner.query(`
-      DROP INDEX idx_tenants_slug IF EXISTS;
-    `);
-
-    await queryRunner.query(`
-      DROP INDEX idx_tenants_status IF EXISTS;
-    `);
   }
 }
