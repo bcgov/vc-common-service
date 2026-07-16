@@ -24,7 +24,7 @@ export class TenantController {
   @Put(':id')
   public async update(
     @Body() dto: Partial<CreateTenantDto>,
-    id: string,
+    @Param('id') id: string,
   ): Promise<Tenant> {
     return this.tenantService.update(id, dto);
   }
