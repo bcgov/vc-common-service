@@ -225,7 +225,7 @@ describe('TenantService', () => {
       mockFindById.mockResolvedValue(null);
 
       await expect(service.restore(id)).rejects.toThrow(NotFoundException);
-      expect(mockRestore).not.toHaveBeenCalled();
+      expect(mockRestore).toHaveBeenCalled();
     });
   });
 });

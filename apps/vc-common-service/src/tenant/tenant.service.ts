@@ -64,12 +64,14 @@ export class TenantService {
   }
 
   public async restore(id: string) {
+    await this.tenants.restore(id);
+
     const tenant = await this.tenants.findById(id);
 
     if (!tenant) {
-      throw new NotFoundException('Tenant not found');
+      throw new NotFoundException(
+        'Restore failed: Tenant not found after restore',
+      );
     }
-
-    await this.tenants.restore(id);
   }
 }
