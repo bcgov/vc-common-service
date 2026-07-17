@@ -21,9 +21,9 @@ export enum TenantStatus {
   DEACTIVATED = 'deactivated',
 }
 
-@Entity('tenants')
-@Index('idx_tenants_slug', ['slug'], { unique: true })
-@Index('idx_tenants_status', ['status'])
+@Entity('tenant')
+@Index('idx_tenant_slug', ['slug'], { unique: true })
+@Index('idx_tenant_status', ['status'])
 export class Tenant {
   @PrimaryGeneratedColumn('uuid')
   public id!: string;

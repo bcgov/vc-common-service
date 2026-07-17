@@ -13,7 +13,7 @@ export class CreateTenantEntity1784231917556 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
-      CREATE TABLE tenants (
+      CREATE TABLE tenant (
           id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
           name VARCHAR(255) NOT NULL,
           slug VARCHAR(100) NOT NULL,
@@ -27,17 +27,17 @@ export class CreateTenantEntity1784231917556 implements MigrationInterface {
     `);
 
     await queryRunner.query(`
-      CREATE UNIQUE INDEX idx_tenants_slug ON tenants (slug) WHERE deleted_at IS NULL
+      CREATE UNIQUE INDEX idx_tenant_slug ON tenant (slug) WHERE deleted_at IS NULL
     `);
 
     await queryRunner.query(`
-      CREATE INDEX idx_tenants_status ON tenants (status) WHERE deleted_at IS NULL
+      CREATE INDEX idx_tenant_status ON tenant (status) WHERE deleted_at IS NULL
     `);
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
-      DROP TABLE tenants;
+      DROP TABLE tenant;
     `);
 
     await queryRunner.query(`
