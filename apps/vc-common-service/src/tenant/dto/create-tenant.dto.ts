@@ -17,7 +17,7 @@ export class CreateTenantDto {
 
   @IsOptional()
   @IsString()
-  public description!: string;
+  public description?: string;
 
   @IsOptional()
   @IsObject()
