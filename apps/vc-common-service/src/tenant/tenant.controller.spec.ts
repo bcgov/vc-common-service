@@ -25,7 +25,6 @@ describe('TenantController', () => {
     config: {},
     created_at: new Date(),
     updated_at: new Date(),
-    deleted_at: new Date(),
   };
 
   beforeEach(async () => {

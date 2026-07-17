@@ -80,5 +80,5 @@ export class Tenant {
     type: 'timestamptz',
     nullable: true,
   })
-  public deleted_at!: Date;
+  public deleted_at?: Date;
 }
