@@ -15,7 +15,7 @@ function isReadonlyArray(value: unknown): value is readonly unknown[] {
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === 'object' && value !== null;
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 // Returns null if valid, otherwise a ValidationError listing all problems.
