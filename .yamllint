@@ -1,0 +1,36 @@
+---
+# yamllint configuration for the Helm chart
+extends: default
+
+# Exclude Go template files and generated content
+ignore: |
+  charts/**/templates/**
+  charts/**/charts/**
+  charts/**/ci/**
+  charts/**/README.md
+  charts/**/CHANGELOG.md
+
+rules:
+  # Helm/K8s commonly use yes/no, on/off
+  truthy:
+    allowed-values: ['true', 'false', 'yes', 'no', 'on', 'off']
+    check-keys: false
+
+  # Not required in K8s manifests
+  document-start: disable
+
+  # Standard Helm indentation
+  indentation:
+    spaces: 2
+    indent-sequences: true
+
+  # Allow flexible comment formatting
+  comments-indentation: disable
+
+  # Common in values.yaml placeholders
+  empty-values:
+    forbid-in-block-mappings: false
+    forbid-in-flow-mappings: false
+
+  # Disable line length warnings
+  line-length: disable

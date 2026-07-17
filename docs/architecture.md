@@ -1300,7 +1300,7 @@ graph TB
 
 **Notes:**
 - API and Worker share the same container image; differentiated by entrypoint command
-- Migrations run as init container in the API pod
+- Migrations run as a `pre-install`/`pre-upgrade` Helm hook Job (once per release, before pods roll). See `migrations.*` in `values.yaml` for hook, ArgoCD, and timeout configuration.
 - Horizontal scaling: API pods are stateless (scale freely); Worker pods use pg-boss `teamSize` + `teamConcurrency` for competing consumers
 - NetworkPolicy restricts ingress to routes only; inter-pod communication explicit
 
