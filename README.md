@@ -68,7 +68,7 @@ See [DEVELOPER.md](docs/DEVELOPER.md#database-migrations) for detailed migration
 ## Documentation
 
 - **[DEVELOPER.md](docs/DEVELOPER.md)** - Detailed setup, running, testing, and troubleshooting guide
-- **[architecture.md](docs/architecture.md)** - System architecture and design decisions
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System architecture and design decisions
 - **[openapi.yaml](docs/openapi.yaml)** - API specification
 
 ## Project Structure

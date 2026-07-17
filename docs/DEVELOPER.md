@@ -258,4 +258,4 @@ npm run build && npm run migrate:up
 - [NestJS Documentation](https://docs.nestjs.com/)
 - [TypeORM Documentation](https://typeorm.io/)
 - [Docker Documentation](https://docs.docker.com/)
-- Project Architecture: See `docs/architecture.md`
+- Project Architecture: See `docs/ARCHITECTURE.md`
