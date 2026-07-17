@@ -78,27 +78,28 @@ export function validatePresentationRequest(
 
   const requestedPredicates: unknown = req.requestedPredicates;
 
-  if (
-    requestedPredicates !== undefined &&
-    isReadonlyArray(requestedPredicates)
-  ) {
-    requestedPredicates.forEach((predicate) => {
-      if (!isRecord(predicate) || !hasText(predicate.name)) {
-        issues.push('requestedPredicate name must not be empty');
-      }
+  if (requestedPredicates !== undefined) {
+    if (!isReadonlyArray(requestedPredicates)) {
+      issues.push('requestedPredicates must be an array');
+    } else {
+      requestedPredicates.forEach((predicate) => {
+        if (!isRecord(predicate) || !hasText(predicate.name)) {
+          issues.push('requestedPredicate name must not be empty');
+        }
 
-      if (!isRecord(predicate) || !hasText(predicate.pType)) {
-        issues.push('requestedPredicate pType must not be empty');
-      }
+        if (!isRecord(predicate) || !hasText(predicate.pType)) {
+          issues.push('requestedPredicate pType must not be empty');
+        }
 
-      if (
-        !isRecord(predicate) ||
-        typeof predicate.pValue !== 'number' ||
-        Number.isNaN(predicate.pValue)
-      ) {
-        issues.push('requestedPredicate pValue must be numeric');
-      }
-    });
+        if (
+          !isRecord(predicate) ||
+          typeof predicate.pValue !== 'number' ||
+          Number.isNaN(predicate.pValue)
+        ) {
+          issues.push('requestedPredicate pValue must be numeric');
+        }
+      });
+    }
   }
 
   return issues.length === 0 ? null : new ValidationError(issues);
