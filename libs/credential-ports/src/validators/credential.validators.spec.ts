@@ -151,6 +151,16 @@ describe('validatePresentationRequest', () => {
     expect(validatePresentationRequest(request)).toBeNull();
   });
 
+  it('should reject non-array requested predicates when provided', () => {
+    const request = {
+      ...validRequest,
+      requestedPredicates: 'not-an-array',
+    } as unknown as PresentationRequest;
+    const result = validatePresentationRequest(request);
+
+    expect(result).toBeInstanceOf(ValidationError);
+    expect(result?.issues).toContain('requestedPredicates must be an array');
+  });
   it('should reject a requested predicate with an empty name', () => {
     const request: PresentationRequest = {
       ...validRequest,
