@@ -8,7 +8,7 @@ import { HealthModule } from './health/health.module';
 import { JobsModule } from './jobs/jobs.module';
 import { ShutdownModule } from './shutdown/shutdown.module';
 import { TenantModule } from './tenant/tenant.module';
-import { TenantUserModule } from './tenant-users/tenant-user.module';
+import { TenantUserModule } from './tenant-user/tenant-user.module';
 
 @Module({
   imports: [

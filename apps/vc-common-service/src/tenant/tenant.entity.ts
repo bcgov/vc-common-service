@@ -16,7 +16,7 @@ import {
   OneToMany,
 } from 'typeorm';
 
-import { TenantUser } from '../tenant-users/tenant-user.entity';
+import { TenantUser } from '../tenant-user/tenant-user.entity';
 
 export enum TenantStatus {
   ACTIVE = 'active',

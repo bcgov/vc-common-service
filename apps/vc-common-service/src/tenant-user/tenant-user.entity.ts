@@ -10,7 +10,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 
-import { Tenant } from '../tenants/tenant.entity';
+import { Tenant } from '../tenant/tenant.entity';
 
 export enum TenantUserRole {
   OWNER = 'owner',
