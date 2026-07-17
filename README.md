@@ -125,7 +125,7 @@ See [openapi.yaml](docs/openapi.yaml) for complete API documentation.
 
 For issues, questions, or contributions, please refer to:
 - [DEVELOPER.md](docs/DEVELOPER.md) - Troubleshooting guide
-- [architecture.md](docs/architecture.md) - System design documentation
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) - System design documentation
 
 ## License
 

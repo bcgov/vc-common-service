@@ -93,7 +93,7 @@ docker compose up db
 npm run start:dev
 
 # Production mode
-npm npm run start:prod
+npm run start:prod
 ```
 
 The application will be available at http://localhost:3000
