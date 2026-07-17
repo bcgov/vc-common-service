@@ -13,7 +13,10 @@ import {
   UpdateDateColumn,
   DeleteDateColumn,
   Index,
+  OneToMany,
 } from 'typeorm';
+
+import { TenantUser } from '../tenant-users/tenant-user.entity';
 
 export enum TenantStatus {
   ACTIVE = 'active',
