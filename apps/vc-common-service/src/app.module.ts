@@ -7,6 +7,7 @@ import { AppService } from './app.service';
 import { HealthModule } from './health/health.module';
 import { JobsModule } from './jobs/jobs.module';
 import { ShutdownModule } from './shutdown/shutdown.module';
+import { TenantModule } from './tenant/tenant.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ShutdownModule } from './shutdown/shutdown.module';
     DatabaseModule,
     HealthModule,
     ShutdownModule,
+    TenantModule,
     JobsModule,
   ],
   controllers: [AppController],
