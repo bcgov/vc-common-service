@@ -84,4 +84,7 @@ export class Tenant {
     nullable: true,
   })
   public deleted_at?: Date;
+
+  @OneToMany(() => TenantUser, (tenantUser) => tenantUser.tenant)
+  public users!: TenantUser[];
 }
