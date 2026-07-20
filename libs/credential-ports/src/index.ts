@@ -12,21 +12,21 @@ export {
 export type {
   CredentialAttribute,
   OfferCredentialRequest,
-} from './dtos/offer-credential-request.dto';
-export type { CredentialExchange } from './dtos/credential-exchange.dto';
+} from './dto/offer-credential-request.dto';
+export type { CredentialExchange } from './dto/credential-exchange.dto';
 export type {
   PresentationRequest,
   RequestedAttribute,
   RequestedPredicate,
-} from './dtos/presentation-request.dto';
-export type { PresentationExchange } from './dtos/presentation-exchange.dto';
+} from './dto/presentation-request.dto';
+export type { PresentationExchange } from './dto/presentation-exchange.dto';
 export type {
   Connection,
   ConnectionFilters,
   Invitation,
   InvitationOptions,
-} from './dtos/connection.dto';
-export type { RevocationResult } from './dtos/revocation-result.dto';
+} from './dto/connection.dto';
+export type { RevocationResult } from './dto/revocation-result.dto';
 
 // Errors (runtime classes)
 export {

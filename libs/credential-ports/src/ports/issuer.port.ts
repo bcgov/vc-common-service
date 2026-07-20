@@ -1,5 +1,5 @@
-import { CredentialExchange } from '../dtos/credential-exchange.dto';
-import { OfferCredentialRequest } from '../dtos/offer-credential-request.dto';
+import { CredentialExchange } from '../dto/credential-exchange.dto';
+import { OfferCredentialRequest } from '../dto/offer-credential-request.dto';
 
 /**
  * Defines agent-agnostic issuer operations for credential offers and exchanges.

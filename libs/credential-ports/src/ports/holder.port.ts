@@ -1,4 +1,4 @@
-import { CredentialExchange } from '../dtos/credential-exchange.dto';
+import { CredentialExchange } from '../dto/credential-exchange.dto';
 
 /**
  * Defines agent-agnostic holder operations for accepting or rejecting offers.

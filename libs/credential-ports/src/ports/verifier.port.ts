@@ -1,5 +1,5 @@
-import { PresentationExchange } from '../dtos/presentation-exchange.dto';
-import { PresentationRequest } from '../dtos/presentation-request.dto';
+import { PresentationExchange } from '../dto/presentation-exchange.dto';
+import { PresentationRequest } from '../dto/presentation-request.dto';
 
 /**
  * Defines agent-agnostic verifier operations for presentation requests and exchanges.

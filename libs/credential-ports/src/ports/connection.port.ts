@@ -3,7 +3,7 @@ import {
   ConnectionFilters,
   Invitation,
   InvitationOptions,
-} from '../dtos/connection.dto';
+} from '../dto/connection.dto';
 
 /**
  * Defines agent-agnostic connection operations for invitations and connection lookup.

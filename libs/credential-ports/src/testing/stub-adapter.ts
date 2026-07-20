@@ -5,12 +5,12 @@ import {
   ConnectionFilters,
   Invitation,
   InvitationOptions,
-} from '../dtos/connection.dto';
-import { CredentialExchange } from '../dtos/credential-exchange.dto';
-import { OfferCredentialRequest } from '../dtos/offer-credential-request.dto';
-import { PresentationExchange } from '../dtos/presentation-exchange.dto';
-import { PresentationRequest } from '../dtos/presentation-request.dto';
-import { RevocationResult } from '../dtos/revocation-result.dto';
+} from '../dto/connection.dto';
+import { CredentialExchange } from '../dto/credential-exchange.dto';
+import { OfferCredentialRequest } from '../dto/offer-credential-request.dto';
+import { PresentationExchange } from '../dto/presentation-exchange.dto';
+import { PresentationRequest } from '../dto/presentation-request.dto';
+import { RevocationResult } from '../dto/revocation-result.dto';
 import { AgentAdapter } from '../ports/agent-adapter';
 
 /**

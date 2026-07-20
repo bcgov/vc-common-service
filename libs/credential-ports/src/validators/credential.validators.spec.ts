@@ -1,5 +1,5 @@
-import { OfferCredentialRequest } from '../dtos/offer-credential-request.dto';
-import { PresentationRequest } from '../dtos/presentation-request.dto';
+import { OfferCredentialRequest } from '../dto/offer-credential-request.dto';
+import { PresentationRequest } from '../dto/presentation-request.dto';
 import { CredentialFormat } from '../enums/credential-format.enum';
 import { ValidationError } from '../errors/adapter-error';
 

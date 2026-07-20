@@ -1,4 +1,4 @@
-import { RevocationResult } from '../dtos/revocation-result.dto';
+import { RevocationResult } from '../dto/revocation-result.dto';
 
 /**
  * Defines agent-agnostic revocation operations for credentials.
