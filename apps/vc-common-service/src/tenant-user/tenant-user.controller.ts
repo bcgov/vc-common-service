@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 
 import { CreateTenantUserDto } from './dto/create-tenant-user.dto';
+import { UpdateTenantUserDto } from './dto/update-tenant-user.dto';
 import { TenantUser } from './tenant-user.entity';
 import { TenantUserService } from './tenant-user.service';
 
@@ -46,7 +47,7 @@ export class TenantUserController {
   @Patch(':id')
   public async update(
     @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: Partial<CreateTenantUserDto>,
+    @Body() dto: UpdateTenantUserDto,
   ): Promise<TenantUser> {
     return await this.tenantUserService.update(id, dto);
   }
