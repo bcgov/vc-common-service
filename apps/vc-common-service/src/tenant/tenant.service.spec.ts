@@ -25,6 +25,7 @@ describe('TenantService', () => {
     config: {},
     created_at: new Date(),
     updated_at: new Date(),
+    users: [],
   };
 
   beforeEach(async () => {

@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 
 import { CreateTenantDto } from './dto/create-tenant.dto';
+import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { Tenant } from './tenant.entity';
 import { TenantService } from './tenant.service';
 
@@ -23,7 +24,7 @@ export class TenantController {
 
   @Put(':id')
   public async update(
-    @Body() dto: Partial<CreateTenantDto>,
+    @Body() dto: UpdateTenantDto,
     @Param('id') id: string,
   ): Promise<Tenant> {
     return this.tenantService.update(id, dto);

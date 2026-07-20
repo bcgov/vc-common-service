@@ -13,7 +13,10 @@ import {
   UpdateDateColumn,
   DeleteDateColumn,
   Index,
+  OneToMany,
 } from 'typeorm';
+
+import { TenantUser } from '../tenant-user/tenant-user.entity';
 
 export enum TenantStatus {
   ACTIVE = 'active',
@@ -81,4 +84,7 @@ export class Tenant {
     nullable: true,
   })
   public deleted_at?: Date;
+
+  @OneToMany(() => TenantUser, (tenantUser) => tenantUser.tenant)
+  public users!: TenantUser[];
 }
