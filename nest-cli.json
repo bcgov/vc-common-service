@@ -45,6 +45,15 @@
       "compilerOptions": {
         "tsConfigPath": "libs/auth/tsconfig.lib.json"
       }
+    },
+    "credential-ports": {
+      "type": "library",
+      "root": "libs/credential-ports",
+      "entryFile": "index",
+      "sourceRoot": "libs/credential-ports/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/credential-ports/tsconfig.lib.json"
+      }
     }
   }
 }
