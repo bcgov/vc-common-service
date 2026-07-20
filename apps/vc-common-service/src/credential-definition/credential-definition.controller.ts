@@ -4,6 +4,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseEnumPipe,
   ParseUUIDPipe,
   Patch,
   Post,
@@ -47,14 +48,19 @@ export class CredentialDefinitionController {
 
   @Get('format/:format')
   public async findByFormat(
-    @Param('format') format: CredentialDefinitionFormat,
+    @Param('format', new ParseEnumPipe(CredentialDefinitionFormat))
+    format: CredentialDefinitionFormat,
   ): Promise<CredentialDefinition[]> {
     return await this.credentialDefinitionService.findByFormat(format);
   }
 
   @Get('connector/:connectorType')
   public async findByConnector(
-    @Param('connectorType') connectorType: CredentialDefinitionConnectorType,
+    @Param(
+      'connectorType',
+      new ParseEnumPipe(CredentialDefinitionConnectorType),
+    )
+    connectorType: CredentialDefinitionConnectorType,
   ): Promise<CredentialDefinition[]> {
     return await this.credentialDefinitionService.findByConnector(
       connectorType,

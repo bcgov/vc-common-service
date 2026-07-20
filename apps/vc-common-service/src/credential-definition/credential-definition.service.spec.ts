@@ -17,7 +17,7 @@ describe('CredentialDefinitionService', () => {
   let mockCreate: jest.Mock;
   let mockFindById: jest.Mock;
   let mockFindByTenantId: jest.Mock;
-  let mockFindByTenantAndName: jest.Mock;
+  let mockFindByTenantAndNameAndFormat: jest.Mock;
   let mockFindByFormat: jest.Mock;
   let mockFindByConnector: jest.Mock;
   let mockUpdate: jest.Mock;
@@ -43,7 +43,6 @@ describe('CredentialDefinitionService', () => {
       config: {},
       created_at: new Date(),
       updated_at: new Date(),
-      users: [],
       deleted_at: new Date(),
     },
   };
@@ -52,7 +51,7 @@ describe('CredentialDefinitionService', () => {
     mockCreate = jest.fn();
     mockFindById = jest.fn();
     mockFindByTenantId = jest.fn();
-    mockFindByTenantAndName = jest.fn();
+    mockFindByTenantAndNameAndFormat = jest.fn();
     mockFindByFormat = jest.fn();
     mockFindByConnector = jest.fn();
     mockUpdate = jest.fn();
@@ -62,7 +61,7 @@ describe('CredentialDefinitionService', () => {
       create: mockCreate,
       findById: mockFindById,
       findByTenantId: mockFindByTenantId,
-      findByTenantAndName: mockFindByTenantAndName,
+      findByTenantAndNameAndFormat: mockFindByTenantAndNameAndFormat,
       findByFormat: mockFindByFormat,
       findByConnector: mockFindByConnector,
       update: mockUpdate,
@@ -100,14 +99,15 @@ describe('CredentialDefinitionService', () => {
         metadata: mockCredentialDefinition.metadata,
       };
 
-      mockFindByTenantAndName.mockResolvedValue(null);
+      mockFindByTenantAndNameAndFormat.mockResolvedValue(null);
       mockCreate.mockResolvedValue(mockCredentialDefinition);
 
       const result = await service.create(dto);
 
-      expect(mockFindByTenantAndName).toHaveBeenCalledWith(
+      expect(mockFindByTenantAndNameAndFormat).toHaveBeenCalledWith(
         dto.tenantId,
         dto.name,
+        dto.format,
       );
       expect(mockCreate).toHaveBeenCalledWith({
         tenantId: dto.tenantId,
@@ -132,12 +132,15 @@ describe('CredentialDefinitionService', () => {
         metadata: mockCredentialDefinition.metadata,
       };
 
-      mockFindByTenantAndName.mockResolvedValue(mockCredentialDefinition);
+      mockFindByTenantAndNameAndFormat.mockResolvedValue(
+        mockCredentialDefinition,
+      );
 
       await expect(service.create(dto)).rejects.toThrow(ConflictException);
-      expect(mockFindByTenantAndName).toHaveBeenCalledWith(
+      expect(mockFindByTenantAndNameAndFormat).toHaveBeenCalledWith(
         dto.tenantId,
         dto.name,
+        dto.format,
       );
       expect(mockCreate).not.toHaveBeenCalled();
     });

@@ -48,6 +48,16 @@ export class CredentialDefinitionRepository {
     });
   }
 
+  public async findByTenantAndNameAndFormat(
+    tenantId: string,
+    name: string,
+    format: CredentialDefinitionFormat,
+  ): Promise<CredentialDefinition | null> {
+    return await this.repository.findOne({
+      where: { tenantId, name, format },
+    });
+  }
+
   public async findByFormat(
     format: CredentialDefinitionFormat,
   ): Promise<CredentialDefinition[]> {

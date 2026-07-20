@@ -11,6 +11,7 @@ import {
 } from './credential-definition.entity';
 import { CredentialDefinitionRepository } from './credential-definition.repository';
 import { CreateCredentialDefinitionDto } from './dto/create-credential-definition.dto';
+import { UpdateCredentialDefinitionDto } from './dto/update-credential-definition.dto';
 
 @Injectable()
 export class CredentialDefinitionService {
@@ -22,14 +23,15 @@ export class CredentialDefinitionService {
     dto: CreateCredentialDefinitionDto,
   ): Promise<CredentialDefinition> {
     const existing =
-      await this.credentialDefinitionRepository.findByTenantAndName(
+      await this.credentialDefinitionRepository.findByTenantAndNameAndFormat(
         dto.tenantId,
         dto.name,
+        dto.format,
       );
 
     if (existing) {
       throw new ConflictException(
-        'Credential definition with this name already exists for this tenant.',
+        'Credential definition with this name and format already exists for this tenant.',
       );
     }
 
@@ -79,11 +81,28 @@ export class CredentialDefinitionService {
 
   public async update(
     id: string,
-    dto: Partial<CreateCredentialDefinitionDto>,
+    dto: UpdateCredentialDefinitionDto,
   ): Promise<CredentialDefinition> {
     const credentialDefinition = await this.findById(id);
 
-    Object.assign(credentialDefinition, dto);
+    if (dto.name !== undefined) {
+      credentialDefinition.name = dto.name;
+    }
+    if (dto.format !== undefined) {
+      credentialDefinition.format = dto.format;
+    }
+    if (dto.schemaDefinition !== undefined) {
+      credentialDefinition.schemaDefinition = dto.schemaDefinition;
+    }
+    if (dto.externalId !== undefined) {
+      credentialDefinition.externalId = dto.externalId;
+    }
+    if (dto.connectorType !== undefined) {
+      credentialDefinition.connectorType = dto.connectorType;
+    }
+    if (dto.metadata !== undefined) {
+      credentialDefinition.metadata = dto.metadata;
+    }
 
     return await this.credentialDefinitionRepository.update(
       credentialDefinition,
