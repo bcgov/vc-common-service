@@ -1,139 +1,19 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
 jobs:
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      - run: npm run lint:ci
-
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      - name: Cache NestJS build
-        uses: actions/cache@v4
-        with:
-          path: |
-            dist
-            tsconfig.build.tsbuildinfo
-          key: nest-build-${{ github.sha }}
-          restore-keys: nest-build-
-      - run: npm run build
-
-  test:
-    runs-on: ubuntu-latest
+  ci-checks:
     permissions:
       contents: read
       pull-requests: write
-    services:
-      postgres:
-        image: postgres:18.4
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: vc_common_service
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-    env:
-      DB_HOST: localhost
-      DB_PORT: 5432
-      DB_USERNAME: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: vc_common_service
-      DB_SYNCHRONIZE: 'true'
-      DB_LOGGING: 'false'
-      NODE_ENV: test
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
-      - run: npm run test:cov
-      - name: Run e2e/integration tests
-        run: npm run test:e2e
-      - name: Report coverage to Coveralls
-        uses: coverallsapp/github-action@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          path-to-lcov: coverage/lcov.info
-
-  helm:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Set up Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: v3.16.2
-      - name: Helm lint
-        working-directory: charts
-        run: |
-          helm lint vc-common-service
-          helm lint vc-common-service -f vc-common-service/ci/ci-values.yaml
-          for env in dev test prod; do
-            helm lint vc-common-service -f vc-common-service/values-$env.yaml
-          done
-      - name: Helm template (render all values files)
-        working-directory: charts
-        run: |
-          helm template ci vc-common-service -f vc-common-service/ci/ci-values.yaml > /dev/null
-          for env in dev test prod; do
-            helm template rel vc-common-service -f vc-common-service/values-$env.yaml > /dev/null
-          done
-      - name: yamllint (values and Chart.yaml)
-        run: |
-          pipx install yamllint || pip install yamllint
-          yamllint --strict -c .yamllint \
-            charts/vc-common-service/values.yaml \
-            charts/vc-common-service/values-dev.yaml \
-            charts/vc-common-service/values-test.yaml \
-            charts/vc-common-service/values-prod.yaml \
-            charts/vc-common-service/ci/ci-values.yaml \
-            charts/vc-common-service/Chart.yaml
-      - name: helm-docs (verify README is up to date)
-        run: |
-          GO111MODULE=on go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2
-          "$(go env GOPATH)/bin/helm-docs" --chart-search-root=charts --template-files=README.md.gotmpl
-          git diff --exit-code charts/vc-common-service/README.md \
-            || { echo "README.md is out of date. Run helm-docs and commit the result."; exit 1; }
+    uses: ./.github/workflows/ci-checks.yml
+    secrets: inherit

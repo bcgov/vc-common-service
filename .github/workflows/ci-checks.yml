@@ -1,0 +1,130 @@
+name: CI Checks
+
+on:
+  workflow_call:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint:ci
+      - name: Run actionlint
+        shell: bash
+        run: |
+          # Pin both the installer script (tag ref) and the binary version
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
+          ./actionlint -color .github/workflows/*.yml
+
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Cache NestJS build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            dist
+            tsconfig.build.tsbuildinfo
+          key: nest-build-${{ github.sha }}
+          restore-keys: nest-build-
+      - run: npm run build
+
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    services:
+      postgres:
+        image: postgres:18.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: vc_common_service
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: vc_common_service
+      DB_SYNCHRONIZE: 'true'
+      DB_LOGGING: 'false'
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:cov
+      - name: Run e2e/integration tests
+        run: npm run test:e2e
+      - name: Report coverage to Coveralls
+        uses: coverallsapp/github-action@648a8eb78e6d50909eff900e4ec85cab4524a45b # v2.3.6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path-to-lcov: coverage/lcov.info
+
+  helm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - name: Set up Helm
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        with:
+          version: v3.16.2
+      - name: Helm lint
+        working-directory: charts
+        run: |
+          helm lint vc-common-service
+          helm lint vc-common-service -f vc-common-service/ci/ci-values.yaml
+          # Glob so new overlays (e.g. values-pr.yaml) are covered automatically
+          for f in vc-common-service/values-*.yaml; do
+            helm lint vc-common-service -f "$f"
+          done
+      - name: Helm template (render all values files)
+        working-directory: charts
+        run: |
+          helm template ci vc-common-service -f vc-common-service/ci/ci-values.yaml > /dev/null
+          for f in vc-common-service/values-*.yaml; do
+            helm template rel vc-common-service -f "$f" > /dev/null
+          done
+      - name: yamllint (values and Chart.yaml)
+        run: |
+          pipx install yamllint || pip install yamllint
+          yamllint --strict -c .yamllint \
+            charts/vc-common-service/values.yaml \
+            charts/vc-common-service/values-*.yaml \
+            charts/vc-common-service/ci/ci-values.yaml \
+            charts/vc-common-service/Chart.yaml
+      - name: helm-docs (verify README is up to date)
+        run: |
+          GO111MODULE=on go install github.com/norwoodj/helm-docs/cmd/helm-docs@v1.14.2
+          "$(go env GOPATH)/bin/helm-docs" --chart-search-root=charts --template-files=README.md.gotmpl
+          git diff --exit-code charts/vc-common-service/README.md \
+            || { echo "README.md is out of date. Run helm-docs and commit the result."; exit 1; }

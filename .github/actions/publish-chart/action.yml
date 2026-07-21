@@ -1,0 +1,87 @@
+name: 'Publish Helm Chart'
+description: 'Package and push the Helm chart as an OCI artifact to GHCR'
+
+inputs:
+  chart_path:
+    description: 'Path to the Helm chart directory'
+    required: false
+    default: 'charts/vc-common-service'
+  registry:
+    description: 'OCI registry URL for the chart'
+    required: false
+    default: 'oci://ghcr.io/bcgov/charts'
+  registry_username:
+    description: 'Registry username for authentication'
+    required: true
+  registry_password:
+    description: 'Registry password or token for authentication'
+    required: true
+
+outputs:
+  chart_version:
+    description: 'The published chart version (clean semver)'
+    value: ${{ steps.version.outputs.chart_version }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Helm
+      uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+      with:
+        # Same helm version CI validates the chart with (ci-checks.yml)
+        version: v3.16.2
+
+    - name: Derive version from tag
+      id: version
+      shell: bash
+      run: |
+        # Strip 'v' prefix from GITHUB_REF_NAME to get clean semver
+        RAW_VERSION="${GITHUB_REF_NAME}"
+        CHART_VERSION="${RAW_VERSION#v}"
+        echo "chart_version=${CHART_VERSION}" >> "${GITHUB_OUTPUT}"
+        echo "Derived chart version: ${CHART_VERSION}"
+
+    - name: Helm lint
+      shell: bash
+      run: |
+        echo "Running helm lint on ${{ inputs.chart_path }}..."
+        helm lint ${{ inputs.chart_path }}
+
+    - name: Helm template (validate rendering)
+      shell: bash
+      run: |
+        echo "Running helm template against default values..."
+        helm template test-release ${{ inputs.chart_path }}
+
+    - name: Helm dependency build
+      shell: bash
+      run: |
+        echo "Building chart dependencies..."
+        helm dependency build ${{ inputs.chart_path }}
+
+    - name: Helm package
+      shell: bash
+      run: |
+        echo "Packaging chart with version ${{ steps.version.outputs.chart_version }}..."
+        helm package ${{ inputs.chart_path }} \
+          --version "${{ steps.version.outputs.chart_version }}" \
+          --app-version "${{ steps.version.outputs.chart_version }}"
+
+    - name: Helm registry login
+      shell: bash
+      env:
+        REGISTRY_USERNAME: ${{ inputs.registry_username }}
+        REGISTRY_PASSWORD: ${{ inputs.registry_password }}
+      run: |
+        echo "Logging in to ghcr.io..."
+        echo "${REGISTRY_PASSWORD}" | helm registry login ghcr.io \
+          --username "${REGISTRY_USERNAME}" \
+          --password-stdin
+
+    - name: Helm push
+      shell: bash
+      run: |
+        CHART_NAME=$(basename ${{ inputs.chart_path }})
+        PKG_FILE="${CHART_NAME}-${{ steps.version.outputs.chart_version }}.tgz"
+        echo "Pushing ${PKG_FILE} to ${{ inputs.registry }}..."
+        helm push "${PKG_FILE}" ${{ inputs.registry }}

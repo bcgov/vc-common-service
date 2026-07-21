@@ -1,0 +1,127 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci-checks:
+    uses: ./.github/workflows/ci-checks.yml
+    secrets: inherit
+    # The called workflow's test job requests pull-requests: write (Coveralls);
+    # a reusable workflow cannot exceed the caller's grant, so grant it here.
+    permissions:
+      contents: read
+      pull-requests: write
+
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      chart-exists: ${{ steps.check-chart.outputs.chart-exists }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Check chart existence
+        id: check-chart
+        run: |
+          if test -f charts/vc-common-service/Chart.yaml; then
+            echo "chart-exists=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "chart-exists=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+  publish-image:
+    needs: [ci-checks]
+    if: github.repository_owner == 'bcgov'
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.sha-tag.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Build and push image
+        id: build-image
+        uses: ./.github/actions/build-image
+        with:
+          image_name: ${{ github.repository }}
+          registry_username: ${{ github.actor }}
+          registry_password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Extract the immutable sha-<short> tag from the pushed tag list rather
+      # than re-deriving its format here, so the tag rules stay defined in one
+      # place (the build-image action).
+      - name: Extract commit-pinned image tag
+        id: sha-tag
+        env:
+          TAGS: ${{ steps.build-image.outputs.tags }}
+        run: |
+          IMAGE_TAG=$(echo "${TAGS}" | grep -m1 -o ':sha-[a-f0-9]*$' | cut -c2- || true)
+          if [ -z "${IMAGE_TAG}" ]; then
+            echo "::error::No sha- tag found in pushed tags: ${TAGS}"
+            exit 1
+          fi
+          echo "image_tag=${IMAGE_TAG}" >> "${GITHUB_OUTPUT}"
+
+  publish-chart:
+    needs: [publish-image, preflight]
+    if: startsWith(github.ref, 'refs/tags/v') && needs.preflight.outputs.chart-exists == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Publish Helm chart
+        uses: ./.github/actions/publish-chart
+        with:
+          registry_username: ${{ github.actor }}
+          registry_password: ${{ secrets.GITHUB_TOKEN }}
+
+  deploy-dev:
+    needs: [publish-image]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: dev
+      url: https://vc-common-service-dev.apps.silver.devops.gov.bc.ca
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up OpenShift access
+        uses: ./.github/actions/oc-setup
+        with:
+          openshift_server_url: ${{ secrets.OPENSHIFT_SERVER }}
+          openshift_token: ${{ secrets.OPENSHIFT_TOKEN }}
+          namespace: ${{ secrets.OPENSHIFT_NAMESPACE }}
+          setup_helm: "true"
+
+      - name: Deploy to dev
+        env:
+          IMAGE_TAG: ${{ needs.publish-image.outputs.image_tag }}
+        run: |
+          helm upgrade --install vc-common-service ./charts/vc-common-service \
+            -f charts/vc-common-service/values-dev.yaml \
+            --set image.tag="${IMAGE_TAG}" \
+            --wait --timeout 10m
+
+  notify-teams:
+    needs: [ci-checks, publish-image, publish-chart, deploy-dev]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Notify Teams
+        uses: ./.github/actions/notify-teams
+        with:
+          webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          # Any failed or cancelled needed job (including ci-checks, whose
+          # failure skips the publish jobs) must not be reported as success.
+          status: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}
