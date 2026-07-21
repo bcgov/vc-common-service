@@ -41,13 +41,11 @@ worker:
 config:
   NODE_ENV: development
   LOG_LEVEL: debug
-  # TODO: point at the dev PostgreSQL service.
-  DB_HOST: <DEV_DB_HOST>
+  DB_HOST: vc-common-service-db:5432
   DB_NAME: vc_common_service
   DB_LOGGING: "true"
 
 secret:
-  # TODO: name of the pre-provisioned Secret in the dev namespace holding
   # DB_USERNAME / DB_PASSWORD (and any signing/HMAC secrets the app reads).
   existingSecret: vc-common-service-secret
   create: false
