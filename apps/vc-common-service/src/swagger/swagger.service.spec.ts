@@ -33,6 +33,9 @@ jest.mock('../tenant/tenant.module', () => ({
 jest.mock('../tenant-user/tenant-user.module', () => ({
   TenantUserModule: jest.fn(),
 }));
+jest.mock('../credential-definition/credential-definition.module', () => ({
+  CredentialDefinitionModule: jest.fn(),
+}));
 
 import { SwaggerService } from './swagger.service';
 
