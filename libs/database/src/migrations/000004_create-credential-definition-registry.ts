@@ -44,11 +44,6 @@ export class CreateCredentialDefinitionRegistry1784316680145 implements Migratio
     `);
 
     await queryRunner.query(`
-      CREATE INDEX idx_credential_definition_tenant_id
-      ON credential_definition (tenant_id);
-    `);
-
-    await queryRunner.query(`
       CREATE INDEX idx_credential_definition_format
       ON credential_definition (format);
     `);
@@ -75,10 +70,6 @@ export class CreateCredentialDefinitionRegistry1784316680145 implements Migratio
 
     await queryRunner.query(`
       DROP INDEX IF EXISTS idx_credential_definition_format;
-    `);
-
-    await queryRunner.query(`
-      DROP INDEX IF EXISTS idx_credential_definition_tenant_id;
     `);
 
     await queryRunner.query(`

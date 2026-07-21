@@ -30,7 +30,6 @@ export enum CredentialDefinitionConnectorType {
   'name',
   'format',
 ])
-@Index('idx_credential_definition_tenant_id', ['tenantId'])
 @Index('idx_credential_definition_format', ['format'])
 @Index('idx_credential_definition_tenant_connector', [
   'tenantId',
