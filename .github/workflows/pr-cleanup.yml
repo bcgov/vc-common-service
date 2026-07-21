@@ -1,0 +1,174 @@
+name: PR Cleanup
+
+on:
+  pull_request:
+    branches: [main]
+    types: [closed, converted_to_draft]
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+  # Needed to cancel in-flight pr-deploy runs.
+  actions: write
+
+# Own group, never cancelled: sharing pr-env-<N> with pr-deploy would let a
+# reopen's deploy run cancel an in-progress teardown mid-way (run-level
+# cancellation defeats step-level always()), leaking the release and database.
+# The reverse direction — a close arriving while a deploy is still running —
+# is handled explicitly by the "Cancel in-flight deploy runs" step below.
+concurrency:
+  group: pr-env-cleanup-${{ github.event.number }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.gate.outputs.deploy }}
+      release_name: ${{ steps.names.outputs.release_name }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # A deploy still running for this PR would race the teardown (or
+      # re-create the release after it); stop queued and running ones first.
+      - name: Cancel in-flight deploy runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          for status in queued in_progress; do
+            gh run list --repo "${GITHUB_REPOSITORY}" --workflow pr-deploy.yml \
+              --branch "${HEAD_BRANCH}" --status "${status}" \
+              --json databaseId --jq '.[].databaseId' |
+            while read -r run_id; do
+              echo "Cancelling pr-deploy run ${run_id} (${status})"
+              gh run cancel "${run_id}" --repo "${GITHUB_REPOSITORY}" || true
+            done
+          done
+
+      # Single source of truth for per-PR names, shared with pr-deploy.yml
+      # and the pr-database action.
+      - name: Derive PR environment names
+        id: names
+        uses: ./.github/actions/pr-env-names
+        with:
+          pr_number: ${{ github.event.number }}
+
+      - name: Evaluate secret availability
+        id: gate
+        env:
+          OPENSHIFT_SERVER: ${{ secrets.OPENSHIFT_SERVER }}
+          OPENSHIFT_TOKEN: ${{ secrets.OPENSHIFT_TOKEN }}
+          OPENSHIFT_NAMESPACE: ${{ secrets.OPENSHIFT_NAMESPACE }}
+        run: |
+          DEPLOY="false"
+
+          # Owner check (no draft check — cleanup always runs on close/draft)
+          if [[ "${{ github.repository_owner }}" != "bcgov" ]]; then
+            echo "::notice::Not bcgov-owned repository. Skipping cluster cleanup."
+            echo "deploy=${DEPLOY}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          # Deploy secrets check
+          MISSING=""
+          if [[ -z "${OPENSHIFT_SERVER}" ]]; then MISSING="${MISSING} OPENSHIFT_SERVER"; fi
+          if [[ -z "${OPENSHIFT_TOKEN}" ]]; then MISSING="${MISSING} OPENSHIFT_TOKEN"; fi
+          if [[ -z "${OPENSHIFT_NAMESPACE}" ]]; then MISSING="${MISSING} OPENSHIFT_NAMESPACE"; fi
+
+          if [[ -z "${MISSING}" ]]; then
+            DEPLOY="true"
+          else
+            echo "::notice::Deploy secrets not configured:${MISSING}. Cluster cleanup will be skipped."
+          fi
+
+          echo "deploy=${DEPLOY}" >> "${GITHUB_OUTPUT}"
+
+  # One job (not uninstall -> drop-db): a single runner/login, and no
+  # between-jobs window where a cancellation could strand the database.
+  teardown:
+    needs: [preflight]
+    if: needs.preflight.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up OpenShift access
+        uses: ./.github/actions/oc-setup
+        with:
+          openshift_server_url: ${{ secrets.OPENSHIFT_SERVER }}
+          openshift_token: ${{ secrets.OPENSHIFT_TOKEN }}
+          namespace: ${{ secrets.OPENSHIFT_NAMESPACE }}
+          setup_helm: "true"
+
+      - name: Uninstall Helm release
+        env:
+          RELEASE_NAME: ${{ needs.preflight.outputs.release_name }}
+        run: |
+          helm uninstall "${RELEASE_NAME}" --ignore-not-found
+
+      - name: Delete leftover objects by label
+        if: always()
+        env:
+          RELEASE_NAME: ${{ needs.preflight.outputs.release_name }}
+        run: |
+          oc delete secret,pvc,configmap \
+            -l "app.kubernetes.io/instance=${RELEASE_NAME}" \
+            --ignore-not-found
+
+      - name: Drop PR database
+        # always(): the database must be dropped even if the uninstall failed,
+        # otherwise vc_pr_<N> leaks on the shared instance.
+        if: always()
+        uses: ./.github/actions/pr-database
+        with:
+          mode: drop
+          pr_number: ${{ github.event.number }}
+          db_workload: ${{ vars.DEV_DB_WORKLOAD }}
+
+  clean-ghcr:
+    needs: [preflight]
+    if: github.repository_owner == 'bcgov'
+    runs-on: ubuntu-latest
+    steps:
+      # NOTE: deleting versions of an org-owned package with GITHUB_TOKEN
+      # requires this repository to have the Admin role in the package
+      # settings (GHCR package -> Manage Actions access).
+      - name: Delete PR image tags
+        uses: snok/container-retention-policy@d3bdcf5ce9b05f685154e4a16c39233b245e3d53 # v3.1.0
+        with:
+          account: ${{ github.repository_owner }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          image-names: ${{ github.event.repository.name }}
+          # Must match the PR tag rules in .github/actions/build-image
+          # (pr-<N> and pr-<N>-<short-sha>). Space/comma-separated wildmatch.
+          image-tags: "pr-${{ github.event.number }} pr-${{ github.event.number }}-*"
+          cut-off: 1s
+          dry-run: false
+
+  comment:
+    needs: [preflight, teardown]
+    if: always() && needs.preflight.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update sticky comment — environment torn down
+        if: needs.teardown.result == 'success'
+        uses: marocchino/sticky-pull-request-comment@67d0dec7b07ed060a405f9b2a64b8ab319fdd7db # v2.9.2
+        with:
+          header: pr-environment
+          message: |
+            ### 🧹 PR Environment Torn Down
+
+            The ephemeral environment for this PR has been removed.
+
+      - name: Update sticky comment — teardown incomplete
+        if: needs.teardown.result != 'success'
+        uses: marocchino/sticky-pull-request-comment@67d0dec7b07ed060a405f9b2a64b8ab319fdd7db # v2.9.2
+        with:
+          header: pr-environment
+          message: |
+            ### ⚠️ PR Environment Teardown Incomplete
+
+            Some cleanup steps failed — resources for this PR may still exist.
+            See the [cleanup run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) and re-run it after resolving the failure.
