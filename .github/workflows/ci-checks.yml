@@ -14,17 +14,13 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Cache node_modules
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
       - run: npm ci
       - run: npm run lint:ci
       - name: Run actionlint
         shell: bash
         run: |
-          bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          # Pin both the installer script (tag ref) and the binary version
+          bash <(curl -sSf https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
           ./actionlint -color .github/workflows/*.yml
 
   build:
@@ -37,11 +33,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Cache node_modules
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
       - run: npm ci
       - name: Cache NestJS build
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -87,11 +78,6 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Cache node_modules
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
       - run: npm ci
       - run: npm run test:cov
       - name: Run e2e/integration tests
@@ -117,24 +103,23 @@ jobs:
         run: |
           helm lint vc-common-service
           helm lint vc-common-service -f vc-common-service/ci/ci-values.yaml
-          for env in dev test prod; do
-            helm lint vc-common-service -f vc-common-service/values-$env.yaml
+          # Glob so new overlays (e.g. values-pr.yaml) are covered automatically
+          for f in vc-common-service/values-*.yaml; do
+            helm lint vc-common-service -f "$f"
           done
       - name: Helm template (render all values files)
         working-directory: charts
         run: |
           helm template ci vc-common-service -f vc-common-service/ci/ci-values.yaml > /dev/null
-          for env in dev test prod; do
-            helm template rel vc-common-service -f vc-common-service/values-$env.yaml > /dev/null
+          for f in vc-common-service/values-*.yaml; do
+            helm template rel vc-common-service -f "$f" > /dev/null
           done
       - name: yamllint (values and Chart.yaml)
         run: |
           pipx install yamllint || pip install yamllint
           yamllint --strict -c .yamllint \
             charts/vc-common-service/values.yaml \
-            charts/vc-common-service/values-dev.yaml \
-            charts/vc-common-service/values-test.yaml \
-            charts/vc-common-service/values-prod.yaml \
+            charts/vc-common-service/values-*.yaml \
             charts/vc-common-service/ci/ci-values.yaml \
             charts/vc-common-service/Chart.yaml
       - name: helm-docs (verify README is up to date)

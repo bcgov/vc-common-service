@@ -17,6 +17,11 @@ jobs:
   ci-checks:
     uses: ./.github/workflows/ci-checks.yml
     secrets: inherit
+    # The called workflow's test job requests pull-requests: write (Coveralls);
+    # a reusable workflow cannot exceed the caller's grant, so grant it here.
+    permissions:
+      contents: read
+      pull-requests: write
 
   preflight:
     runs-on: ubuntu-latest
@@ -62,30 +67,16 @@ jobs:
           registry_password: ${{ secrets.GITHUB_TOKEN }}
 
   notify-teams:
-    needs: [publish-image, publish-chart]
+    needs: [ci-checks, publish-image, publish-chart]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - name: Compute aggregate status
-        id: status
-        run: |
-          # Treat skipped/cancelled as success; any failure means failure
-          RESULTS="${{ needs.publish-image.result }} ${{ needs.publish-chart.result }}"
-          if echo "${RESULTS}" | grep -q "failure"; then
-            echo "aggregate=failure" >> "${GITHUB_OUTPUT}"
-          else
-            echo "aggregate=success" >> "${GITHUB_OUTPUT}"
-          fi
-
       - name: Notify Teams
         uses: ./.github/actions/notify-teams
         with:
           webhook_url: ${{ secrets.TEAMS_WEBHOOK_URL }}
-          status: ${{ steps.status.outputs.aggregate }}
-          repo: ${{ github.repository }}
-          ref: ${{ github.ref_name }}
-          sha: ${{ github.sha }}
-          actor: ${{ github.actor }}
-          run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # Any failed or cancelled needed job (including ci-checks, whose
+          # failure skips the publish jobs) must not be reported as success.
+          status: ${{ (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && 'failure' || 'success' }}

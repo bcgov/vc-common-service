@@ -1,53 +1,28 @@
 name: 'Notify Teams'
-description: 'Post an Adaptive Card to a Microsoft Teams Workflows webhook'
+description: 'Post a GitHub notification to the n8n webhook that relays to Microsoft Teams'
 
 inputs:
   webhook_url:
-    description: 'Microsoft Teams Workflows webhook URL'
+    description: 'n8n webhook URL for GitHub notifications'
     required: false
     default: ''
   status:
     description: 'Pipeline status (success or failure)'
     required: true
-  image_ref:
-    description: 'Published container image reference'
+  title:
+    description: 'Job/pipeline name shown in the notification'
     required: false
-    default: ''
-  chart_version:
-    description: 'Published Helm chart version'
-    required: false
-    default: ''
-  repo:
-    description: 'Repository name (owner/repo)'
-    required: true
-  ref:
-    description: 'Git ref (branch or tag)'
-    required: true
-  sha:
-    description: 'Full git commit SHA'
-    required: true
-  actor:
-    description: 'GitHub actor who triggered the workflow'
-    required: true
-  run_url:
-    description: 'URL to the workflow run'
-    required: true
+    default: 'CD Pipeline'
 
 runs:
   using: composite
   steps:
-    - name: Send Teams notification
+    - name: Send notification
       shell: bash
       env:
         WEBHOOK_URL: ${{ inputs.webhook_url }}
         STATUS: ${{ inputs.status }}
-        IMAGE_REF: ${{ inputs.image_ref }}
-        CHART_VERSION: ${{ inputs.chart_version }}
-        REPO: ${{ inputs.repo }}
-        REF: ${{ inputs.ref }}
-        SHA: ${{ inputs.sha }}
-        ACTOR: ${{ inputs.actor }}
-        RUN_URL: ${{ inputs.run_url }}
+        TITLE: ${{ inputs.title }}
       run: |
         # Check if webhook URL is configured
         if [ -z "${WEBHOOK_URL}" ]; then
@@ -55,72 +30,39 @@ runs:
           exit 0
         fi
 
-        # Determine accent color and status icon
+        # The n8n parser checks body.text for the word "succeeded" (anything
+        # else renders as failed) and extracts the *job name* between asterisks.
         if [ "${STATUS}" = "success" ]; then
-          COLOR="Good"
-          ICON="✅"
+          VERB="succeeded"
         else
-          COLOR="Attention"
-          ICON="❌"
+          VERB="failed"
         fi
 
-        # Compute short SHA (7 characters)
-        SHORT_SHA="${SHA:0:7}"
+        RUN_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
 
-        # Determine chart version display
-        if [ -n "${CHART_VERSION}" ]; then
-          CHART_DISPLAY="${CHART_VERSION}"
-        else
-          CHART_DISPLAY="N/A"
-        fi
-
-        # Build the Adaptive Card JSON payload
-        PAYLOAD=$(cat <<EOF
-        {
-          "type": "message",
-          "attachments": [{
-            "contentType": "application/vnd.microsoft.card.adaptive",
-            "content": {
-              "\$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-              "type": "AdaptiveCard",
-              "version": "1.4",
-              "body": [
-                {
-                  "type": "TextBlock",
-                  "text": "${ICON} CD Pipeline: ${STATUS}",
-                  "weight": "bolder",
-                  "color": "${COLOR}"
-                },
-                {
-                  "type": "FactSet",
-                  "facts": [
-                    { "title": "Repository", "value": "${REPO}" },
-                    { "title": "Ref", "value": "${REF}" },
-                    { "title": "Commit", "value": "${SHORT_SHA}" },
-                    { "title": "Image", "value": "${IMAGE_REF}" },
-                    { "title": "Chart", "value": "${CHART_DISPLAY}" },
-                    { "title": "Actor", "value": "${ACTOR}" }
-                  ]
-                },
-                {
-                  "type": "ActionSet",
-                  "actions": [
-                    {
-                      "type": "Action.OpenUrl",
-                      "title": "View Run",
-                      "url": "${RUN_URL}"
-                    }
-                  ]
-                }
+        # Slack-style payload matching the n8n GitHub-notification parser:
+        # attachments[0].fields with titles "workflow" (markdown link),
+        # "repository" (markdown link), "ref" (full ref), "event name".
+        PAYLOAD=$(jq -n \
+          --arg text "*${TITLE}* ${VERB}" \
+          --arg workflow "[${GITHUB_WORKFLOW}](${RUN_URL})" \
+          --arg repository "[${GITHUB_REPOSITORY}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY})" \
+          --arg ref "${GITHUB_REF}" \
+          --arg event_name "${GITHUB_EVENT_NAME}" \
+          '{
+            text: $text,
+            attachments: [{
+              fields: [
+                { title: "workflow", value: $workflow },
+                { title: "repository", value: $repository },
+                { title: "ref", value: $ref },
+                { title: "event name", value: $event_name }
               ]
-            }
-          }]
-        }
-        EOF
-        )
+            }]
+          }')
 
-        # POST the payload to the Teams webhook
-        echo "Sending notification to Teams..."
+        # POST the payload to the n8n webhook (best effort — never fail the pipeline)
+        echo "Sending notification..."
         RESPONSE_FILE=$(mktemp)
         HTTP_CODE=$(curl --silent --output "${RESPONSE_FILE}" --write-out "%{http_code}" \
           --fail-with-body \
@@ -134,9 +76,9 @@ runs:
 
         # Check if the request succeeded (2xx status code)
         if [[ ! "${HTTP_CODE}" =~ ^2[0-9]{2}$ ]]; then
-          echo "::error::Teams notification failed (HTTP ${HTTP_CODE}). Response: ${RESPONSE_BODY}"
-          echo "⚠️ Teams notification failed but will not fail the pipeline"
+          echo "::error::Notification failed (HTTP ${HTTP_CODE}). Response: ${RESPONSE_BODY}"
+          echo "⚠️ Notification failed but will not fail the pipeline"
           exit 0
         fi
 
-        echo "✅ Teams notification sent successfully"
+        echo "✅ Notification sent successfully"
