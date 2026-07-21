@@ -8,6 +8,11 @@ import {
   Patch,
   Post,
 } from '@nestjs/common';
+import {
+  ApiCreatedResponse,
+  ApiOkResponse,
+  ApiNotFoundResponse,
+} from '@nestjs/swagger';
 
 import { CreateTenantUserDto } from './dto/create-tenant-user.dto';
 import { UpdateTenantUserDto } from './dto/update-tenant-user.dto';
@@ -19,11 +24,20 @@ export class TenantUserController {
   public constructor(private readonly tenantUserService: TenantUserService) {}
 
   @Post()
+  @ApiCreatedResponse({
+    description: 'Tenant user created successfully',
+    type: TenantUser,
+  })
   public async create(@Body() dto: CreateTenantUserDto): Promise<TenantUser> {
     return await this.tenantUserService.create(dto);
   }
 
   @Get(':id')
+  @ApiOkResponse({
+    description: 'Tenant user found',
+    type: TenantUser,
+  })
+  @ApiNotFoundResponse({ description: 'Tenant user not found' })
   public async findById(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<TenantUser> {
@@ -31,6 +45,11 @@ export class TenantUserController {
   }
 
   @Get('tenant/:tenantId')
+  @ApiOkResponse({
+    description: 'List of tenant users for the specified tenant',
+    type: [TenantUser],
+  })
+  @ApiNotFoundResponse({ description: 'Tenant not found' })
   public async findByTenantId(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
   ): Promise<TenantUser[]> {
@@ -38,6 +57,10 @@ export class TenantUserController {
   }
 
   @Get('external/:externalUserId')
+  @ApiOkResponse({
+    description: 'List of tenant users with the specified external user ID',
+    type: [TenantUser],
+  })
   public async findByExternalUserId(
     @Param('externalUserId') externalUserId: string,
   ): Promise<TenantUser[]> {
@@ -45,6 +68,11 @@ export class TenantUserController {
   }
 
   @Patch(':id')
+  @ApiOkResponse({
+    description: 'Tenant user updated successfully',
+    type: TenantUser,
+  })
+  @ApiNotFoundResponse({ description: 'Tenant user not found' })
   public async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateTenantUserDto,
@@ -53,6 +81,8 @@ export class TenantUserController {
   }
 
   @Delete(':id')
+  @ApiOkResponse({ description: 'Tenant user deleted successfully' })
+  @ApiNotFoundResponse({ description: 'Tenant user not found' })
   public async delete(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return await this.tenantUserService.delete(id);
   }

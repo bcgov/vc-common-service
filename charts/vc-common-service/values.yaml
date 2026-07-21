@@ -244,6 +244,8 @@ config:
   DB_NAME: vc_common_service
   DB_SYNCHRONIZE: "false"
   DB_LOGGING: "false"
+  SWAGGER_ENABLED: "true"
+  SWAGGER_JSON_ENABLED: "true"
 
 # -- Extra plain environment variables appended to every container (name/value list)
 extraEnv: []

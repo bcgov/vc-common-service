@@ -184,9 +184,8 @@ describe('TenantService', () => {
       const slug = 'non-existent-slug';
       mockFindBySlug.mockResolvedValue(null);
 
-      const result = await service.findBySlug(slug);
-
-      expect(result).toBeNull();
+      await expect(service.findBySlug(slug)).rejects.toThrow(NotFoundException);
+      expect(mockFindBySlug).toHaveBeenCalledWith(slug);
     });
   });
 

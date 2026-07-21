@@ -50,7 +50,13 @@ export class TenantService {
   }
 
   public async findBySlug(slug: string) {
-    return this.tenants.findBySlug(slug);
+    const tenant = await this.tenants.findBySlug(slug);
+
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+
+    return tenant;
   }
 
   public async delete(id: string) {
