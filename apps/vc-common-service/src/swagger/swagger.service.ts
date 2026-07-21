@@ -14,11 +14,10 @@ export class SwaggerService {
     app: INestApplication,
     configService: ConfigService,
   ): void {
-    const swaggerEnabled = configService.get<boolean>('SWAGGER_ENABLED', true);
-    const swaggerJsonEnabled = configService.get<boolean>(
-      'SWAGGER_JSON_ENABLED',
-      false,
-    );
+    const swaggerEnabled: boolean =
+      configService.get<string>('SWAGGER_ENABLED', 'true') === 'true';
+    const swaggerJsonEnabled: boolean =
+      configService.get<string>('SWAGGER_JSON_ENABLED', 'true') === 'true';
 
     // If JSON-only mode is enabled, setup only JSON endpoints
     if (swaggerJsonEnabled && !swaggerEnabled) {

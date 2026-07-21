@@ -86,8 +86,8 @@ describe('SwaggerService', () => {
 
     it('should setup full documentation when SWAGGER_ENABLED is explicitly true', (): void => {
       mockConfigServiceGet.mockImplementation((key: string): unknown => {
-        if (key === 'SWAGGER_ENABLED') return true;
-        if (key === 'SWAGGER_JSON_ENABLED') return false;
+        if (key === 'SWAGGER_ENABLED') return 'true';
+        if (key === 'SWAGGER_JSON_ENABLED') return 'false';
         return undefined;
       });
 
@@ -100,8 +100,8 @@ describe('SwaggerService', () => {
 
     it('should skip setup when SWAGGER_ENABLED is false and SWAGGER_JSON_ENABLED is not set', (): void => {
       mockConfigServiceGet.mockImplementation((key: string): unknown => {
-        if (key === 'SWAGGER_ENABLED') return false;
-        if (key === 'SWAGGER_JSON_ENABLED') return false;
+        if (key === 'SWAGGER_ENABLED') return 'false';
+        if (key === 'SWAGGER_JSON_ENABLED') return 'false';
         return undefined;
       });
 
@@ -114,8 +114,8 @@ describe('SwaggerService', () => {
 
     it('should setup only JSON endpoints when SWAGGER_JSON_ENABLED is true and SWAGGER_ENABLED is false', (): void => {
       mockConfigServiceGet.mockImplementation((key: string): unknown => {
-        if (key === 'SWAGGER_ENABLED') return false;
-        if (key === 'SWAGGER_JSON_ENABLED') return true;
+        if (key === 'SWAGGER_ENABLED') return 'false';
+        if (key === 'SWAGGER_JSON_ENABLED') return 'true';
         return undefined;
       });
 
@@ -128,8 +128,8 @@ describe('SwaggerService', () => {
 
     it('should setup full documentation when SWAGGER_JSON_ENABLED is true and SWAGGER_ENABLED is true', (): void => {
       mockConfigServiceGet.mockImplementation((key: string): unknown => {
-        if (key === 'SWAGGER_ENABLED') return true;
-        if (key === 'SWAGGER_JSON_ENABLED') return true;
+        if (key === 'SWAGGER_ENABLED') return 'true';
+        if (key === 'SWAGGER_JSON_ENABLED') return 'true';
         return undefined;
       });
 
@@ -212,11 +212,11 @@ describe('SwaggerService', () => {
 
       expect(mockConfigServiceGet).toHaveBeenCalledWith(
         'SWAGGER_ENABLED',
-        true,
+        'true',
       );
     });
 
-    it('should parse SWAGGER_JSON_ENABLED as boolean with false default', (): void => {
+    it('should parse SWAGGER_JSON_ENABLED as boolean with true default', (): void => {
       mockConfigServiceGet.mockImplementation(
         (key: string, defaultValue: unknown): unknown => {
           if (key === 'SWAGGER_JSON_ENABLED') return false;
@@ -228,7 +228,7 @@ describe('SwaggerService', () => {
 
       expect(mockConfigServiceGet).toHaveBeenCalledWith(
         'SWAGGER_JSON_ENABLED',
-        false,
+        'true',
       );
     });
   });
