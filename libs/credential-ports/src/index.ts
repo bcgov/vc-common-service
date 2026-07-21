@@ -52,6 +52,26 @@ export { VerifierPort } from './ports/verifier.port';
 export type { AgentAdapter } from './ports/agent-adapter';
 
 // Testing helpers
+export {
+  createFullTenantSetup,
+  createTestClient,
+  createTestCredDef,
+  createTestTenant,
+  createTestUser,
+} from './testing/test-data.factory';
+export type {
+  TestClient,
+  TestConnector,
+  TestCredDef,
+  TestFullTenantSetup,
+  TestTenant,
+  TestUser,
+} from './testing/test-data.factory';
+export { MockAdapter } from './testing/mock-adapter';
+export type {
+  MockAdapterCall,
+  MockAdapterConfig,
+} from './testing/mock-adapter';
 export { StubAdapter } from './testing/stub-adapter';
 
 // Module

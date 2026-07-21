@@ -1,3 +1,9 @@
+# Integration test database stack:
+#   docker compose --profile test up -d db-test migrate-test seed-test
+#   docker compose --profile test down -v
+# Compose keeps unprofiled services enabled, so target the test services above to
+# start only the isolated PostgreSQL test database on localhost:5433, then run
+# migrations and the test seed script against vc_common_service_test.
 services:
   app:
     build:
@@ -44,5 +50,58 @@ services:
       timeout: 5s
       retries: 5
 
+  db-test:
+    image: postgres:18.4
+    profiles: ['test']
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: vc_common_service_test
+    volumes:
+      - postgres-test-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres -d vc_common_service_test']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrate-test:
+    build:
+      context: .
+      target: deps
+    profiles: ['test']
+    command: sh -c "npm run build && npm run migrate:up"
+    volumes:
+      - .:/app
+      - /app/node_modules
+    environment:
+      NODE_ENV: test
+      DB_HOST: db-test
+      DB_PORT: 5432
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      DB_NAME: vc_common_service_test
+      DB_LOGGING: 'false'
+    depends_on:
+      db-test:
+        condition: service_healthy
+
+  seed-test:
+    image: postgres:18.4
+    profiles: ['test']
+    command: >-
+      sh -c "psql -v ON_ERROR_STOP=1 -h db-test -p 5432 -U postgres -d vc_common_service_test
+      -f /seeds/test-seed.sql"
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - ./libs/database/src/seeds/test-seed.sql:/seeds/test-seed.sql:ro
+    depends_on:
+      migrate-test:
+        condition: service_completed_successfully
+
 volumes:
   postgres-data:
+  postgres-test-data:

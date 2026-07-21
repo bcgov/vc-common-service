@@ -80,7 +80,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:cov
-      - name: Run e2e/integration tests
+      - name: Run integration tests
+        run: npm run test:integration
+      - name: Run e2e tests
         run: npm run test:e2e
       - name: Report coverage to Coveralls
         uses: coverallsapp/github-action@648a8eb78e6d50909eff900e4ec85cab4524a45b # v2.3.6
