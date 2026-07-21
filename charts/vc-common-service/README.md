@@ -58,7 +58,7 @@ OpenShift. Key characteristics:
 | autoscaling.maxReplicas | int | `3` | Maximum API replicas |
 | autoscaling.minReplicas | int | `1` | Minimum API replicas |
 | autoscaling.targetCPUUtilizationPercentage | int | `80` | Target average CPU utilization (percentage) |
-| config | object | `{"DB_HOST":"","DB_LOGGING":"false","DB_NAME":"vc_common_service","DB_PORT":"5432","DB_SYNCHRONIZE":"false","LOG_LEVEL":"info","NODE_ENV":"production","PORT":"3000"}` | Non-secret application configuration, rendered into a ConfigMap and injected as environment variables into all containers. |
+| config | object | `{"DB_HOST":"","DB_LOGGING":"false","DB_NAME":"vc_common_service","DB_PORT":"5432","DB_SYNCHRONIZE":"false","LOG_LEVEL":"info","NODE_ENV":"production","PORT":"3000","SWAGGER_ENABLED":"true","SWAGGER_JSON_ENABLED":"true" }` | Non-secret application configuration, rendered into a ConfigMap and injected as environment variables into all containers. |
 | extraEnv | list | `[]` | Extra plain environment variables appended to every container (name/value list) |
 | extraEnvFrom | list | `[]` | Extra envFrom sources (configMapRef/secretRef) for every container |
 | fullnameOverride | string | `""` | Override the fully qualified release name |
