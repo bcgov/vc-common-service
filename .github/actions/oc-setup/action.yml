@@ -1,0 +1,44 @@
+name: OpenShift Setup
+description: Install the OpenShift CLI (and optionally Helm) and authenticate to the cluster
+
+inputs:
+  openshift_server_url:
+    description: "OpenShift API server URL"
+    required: true
+  openshift_token:
+    description: "OpenShift ServiceAccount token"
+    required: true
+  namespace:
+    description: "Namespace to set as the current context"
+    required: true
+  setup_helm:
+    description: "Also install the Helm CLI"
+    required: false
+    default: "false"
+  helm_version:
+    description: "Helm version to install (keep in step with ci-checks.yml and publish-chart)"
+    required: false
+    default: "v3.16.2"
+
+runs:
+  using: composite
+  steps:
+    # oc is not preinstalled on ubuntu-latest (24.04) runners, and oc-login
+    # requires the binary to be present.
+    - name: Install OpenShift CLI
+      uses: redhat-actions/openshift-tools-installer@144527c7d98999f2652264c048c7a9bd103f8a82 # v1.13.1
+      with:
+        oc: "4.14"
+
+    - name: Set up Helm
+      if: inputs.setup_helm == 'true'
+      uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+      with:
+        version: ${{ inputs.helm_version }}
+
+    - name: Authenticate and set context
+      uses: redhat-actions/oc-login@5eb45e848b168b6bf6b8fe7f1561003c12e3c99d # v1.3
+      with:
+        openshift_server_url: ${{ inputs.openshift_server_url }}
+        openshift_token: ${{ inputs.openshift_token }}
+        namespace: ${{ inputs.namespace }}
