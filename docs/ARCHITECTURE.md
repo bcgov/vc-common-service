@@ -239,7 +239,7 @@ export class AdapterRegistry {
     // 3. Resolve adapter by connector_type from registry
     // 4. If format omitted, derive from connector's primary supported format
     // 5. Validate format is supported by that adapter
-    // 6. Return adapter instance (or throw UnsupportedFormatError)
+    // 6. Return adapter instance (or throw FormatNotSupportedError)
   }
 }
 ```
