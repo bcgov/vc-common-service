@@ -116,9 +116,11 @@ spec:
   egress:
     - to: []
       ports:
+        {{- range .Values.networkPolicy.dnsEgress.ports }}
         - protocol: UDP
-          port: {{ .Values.networkPolicy.dnsEgress.port }}
+          port: {{ . }}
         - protocol: TCP
-          port: {{ .Values.networkPolicy.dnsEgress.port }}
+          port: {{ . }}
+        {{- end }}
 {{- end }}
 {{- end }}

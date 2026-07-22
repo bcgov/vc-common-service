@@ -274,8 +274,13 @@ networkPolicy:
   dnsEgress:
     # -- Allow DNS egress (required whenever any egress rule is enabled)
     enabled: true
-    # -- DNS port
-    port: 53
+    # -- DNS ports to allow. Both are required on OpenShift: pods query the
+    # dns-default Service on 53, but CoreDNS actually listens on 5353, and
+    # OVN-Kubernetes evaluates egress policy AFTER the service DNAT rewrites
+    # the port — allowing only 53 silently drops every DNS packet.
+    ports:
+      - 53
+      - 5353
   ingress:
     # -- Allow ingress to the API from the OpenShift router
     enabled: true
