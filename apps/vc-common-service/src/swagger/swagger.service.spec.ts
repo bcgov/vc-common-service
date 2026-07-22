@@ -36,6 +36,9 @@ jest.mock('../tenant-user/tenant-user.module', () => ({
 jest.mock('../credential-definition/credential-definition.module', () => ({
   CredentialDefinitionModule: jest.fn(),
 }));
+jest.mock('../connection/connection.module', () => ({
+  ConnectionModule: jest.fn(),
+}));
 
 import { SwaggerService } from './swagger.service';
 
@@ -83,8 +86,8 @@ describe('SwaggerService', () => {
       SwaggerService.setupSwagger(mockApp, mockConfigService);
 
       expect(SwaggerModule.createDocument).toHaveBeenCalled();
-      expect(SwaggerModule.setup).toHaveBeenCalledTimes(2);
-      expect(mockHttpAdapterGet).toHaveBeenCalledTimes(2);
+      expect(SwaggerModule.setup).toHaveBeenCalledTimes(3);
+      expect(mockHttpAdapterGet).toHaveBeenCalledTimes(3);
     });
 
     it('should setup full documentation when SWAGGER_ENABLED is explicitly true', (): void => {
@@ -97,8 +100,8 @@ describe('SwaggerService', () => {
       SwaggerService.setupSwagger(mockApp, mockConfigService);
 
       expect(SwaggerModule.createDocument).toHaveBeenCalled();
-      expect(SwaggerModule.setup).toHaveBeenCalledTimes(2);
-      expect(mockHttpAdapterGet).toHaveBeenCalledTimes(2);
+      expect(SwaggerModule.setup).toHaveBeenCalledTimes(3);
+      expect(mockHttpAdapterGet).toHaveBeenCalledTimes(3);
     });
 
     it('should skip setup when SWAGGER_ENABLED is false and SWAGGER_JSON_ENABLED is not set', (): void => {
@@ -126,7 +129,7 @@ describe('SwaggerService', () => {
 
       expect(SwaggerModule.createDocument).toHaveBeenCalled();
       expect(SwaggerModule.setup).not.toHaveBeenCalled();
-      expect(mockHttpAdapterGet).toHaveBeenCalledTimes(2);
+      expect(mockHttpAdapterGet).toHaveBeenCalledTimes(3);
     });
 
     it('should setup full documentation when SWAGGER_JSON_ENABLED is true and SWAGGER_ENABLED is true', (): void => {
@@ -139,8 +142,8 @@ describe('SwaggerService', () => {
       SwaggerService.setupSwagger(mockApp, mockConfigService);
 
       expect(SwaggerModule.createDocument).toHaveBeenCalled();
-      expect(SwaggerModule.setup).toHaveBeenCalledTimes(2);
-      expect(mockHttpAdapterGet).toHaveBeenCalledTimes(2);
+      expect(SwaggerModule.setup).toHaveBeenCalledTimes(3);
+      expect(mockHttpAdapterGet).toHaveBeenCalledTimes(3);
     });
   });
 
