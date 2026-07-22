@@ -9,6 +9,10 @@ export class PgBossService {
 
   public boss!: PgBoss;
 
+  private readonly maxRetries = 5;
+
+  private readonly retryDelayMs = 1000;
+
   public constructor(private readonly config: ConfigService) {}
 
   public async createBoss(): Promise<PgBoss> {
@@ -32,8 +36,36 @@ export class PgBossService {
     const boss = await this.createBoss();
     this.boss = boss;
     this.logger.log('Starting pg-boss...');
-    await boss.start();
+
+    await this.startWithRetry(boss);
+
     this.logger.log('pg-boss started');
     return boss;
+  }
+
+  private async startWithRetry(boss: PgBoss, attempt = 1): Promise<void> {
+    try {
+      await boss.start();
+    } catch (error) {
+      if (attempt <= this.maxRetries) {
+        const delayMs = this.retryDelayMs * Math.pow(2, attempt - 1);
+        this.logger.warn(
+          `Failed to start pg-boss (attempt ${attempt}/${this.maxRetries}). Retrying in ${delayMs}ms...`,
+          error instanceof Error ? error.message : String(error),
+        );
+        await this.delay(delayMs);
+        return this.startWithRetry(boss, attempt + 1);
+      }
+
+      this.logger.error(
+        `Failed to start pg-boss after ${this.maxRetries} attempts`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw error;
+    }
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 }
