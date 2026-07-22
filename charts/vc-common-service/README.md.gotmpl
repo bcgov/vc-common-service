@@ -51,5 +51,8 @@ OpenShift. Key characteristics:
 ## Values
 
 {{ template "chart.valuesTable" . }}
-
-{{ template "helm-docs.versionFooter" . }}
+{{/*
+No helm-docs.versionFooter: its output depends on how the binary was built
+(go install produces an empty version, release builds embed one), so the
+footer makes CI's README check disagree with locally generated docs.
+*/}}
