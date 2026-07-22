@@ -1,21 +1,19 @@
 import './jest-e2e-setup';
 
-const requiredEnvVars = [
-  'DB_HOST',
-  'DB_PORT',
-  'DB_USERNAME',
-  'DB_PASSWORD',
-  'DB_NAME',
-] as const;
+// Apply local-dev defaults in Node so the integration tier stays cross-platform
+// (no POSIX shell parameter expansion in package.json, which breaks on Windows).
+// Real environments such as CI set these explicitly and are left untouched.
+const envDefaults: Record<string, string> = {
+  NODE_ENV: 'test',
+  DB_HOST: 'localhost',
+  DB_PORT: '5433',
+  DB_USERNAME: 'postgres',
+  DB_PASSWORD: 'postgres',
+  DB_NAME: 'vc_common_service_test',
+};
 
-const missingEnvVars = requiredEnvVars.filter(
-  (envVar) => !process.env[envVar]?.trim(),
-);
-
-if (missingEnvVars.length > 0) {
-  throw new Error(
-    `Integration tests require ${missingEnvVars.join(', ')}. ` +
-      'Start the test database with `docker compose --profile test up -d db-test migrate-test seed-test` ' +
-      'and export the matching DB_* variables before running `npm run test:integration`.',
-  );
+for (const [key, value] of Object.entries(envDefaults)) {
+  if (!process.env[key]?.trim()) {
+    process.env[key] = value;
+  }
 }
