@@ -8,21 +8,22 @@ import { CredentialDefinitionModule } from '../credential-definition/credential-
 import { TenantModule } from '../tenant/tenant.module';
 import { TenantUserModule } from '../tenant-user/tenant-user.module';
 
-const tenantSwagger = {
-  name: 'tenant',
-  title: 'Tenant API',
-  description: 'API endpoints for tenant and tenant user management',
-  version: '1.0',
-  modules: [TenantModule, TenantUserModule, CredentialDefinitionModule],
-};
-
-const vcSwagger = {
-  name: 'vc',
-  title: 'VC Operations API',
-  description: 'API endpoints for VC operations',
-  version: '1.0',
-  modules: [ConnectionModule],
-};
+const swaggerApps = [
+  {
+    name: 'tenant',
+    title: 'Tenant API',
+    description: 'API endpoints for tenant and tenant user management',
+    version: '1.0',
+    modules: [TenantModule, TenantUserModule, CredentialDefinitionModule],
+  },
+  {
+    name: 'vc',
+    title: 'VC Operations API',
+    description: 'API endpoints for VC operations',
+    version: '1.0',
+    modules: [ConnectionModule],
+  },
+];
 
 export class SwaggerService {
   /**
@@ -50,22 +51,16 @@ export class SwaggerService {
 
     // Full setup: UI + JSON endpoints
     this.setupFullDocumentation(app);
-    this.setupCustomDocumentation(
-      app,
-      tenantSwagger.name,
-      tenantSwagger.title,
-      tenantSwagger.description,
-      tenantSwagger.version,
-      tenantSwagger.modules,
-    );
-    this.setupCustomDocumentation(
-      app,
-      'vc',
-      'VC Operations API',
-      'API endpoints for VC operations',
-      '1.0',
-      [ConnectionModule],
-    );
+    for (const swaggerApp of swaggerApps) {
+      this.setupCustomDocumentation(
+        app,
+        swaggerApp.name,
+        swaggerApp.title,
+        swaggerApp.description,
+        swaggerApp.version,
+        swaggerApp.modules,
+      );
+    }
   }
 
   /**
@@ -73,22 +68,16 @@ export class SwaggerService {
    */
   private static setupJsonEndpoints(app: INestApplication): void {
     this.setupFullDocumentationJson(app);
-    this.setupCustomDocumentationJson(
-      app,
-      tenantSwagger.name,
-      tenantSwagger.title,
-      tenantSwagger.description,
-      tenantSwagger.version,
-      tenantSwagger.modules,
-    );
-    this.setupCustomDocumentationJson(
-      app,
-      vcSwagger.name,
-      vcSwagger.title,
-      vcSwagger.description,
-      vcSwagger.version,
-      vcSwagger.modules,
-    );
+    for (const swaggerApp of swaggerApps) {
+      this.setupCustomDocumentationJson(
+        app,
+        swaggerApp.name,
+        swaggerApp.title,
+        swaggerApp.description,
+        swaggerApp.version,
+        swaggerApp.modules,
+      );
+    }
   }
 
   /**
