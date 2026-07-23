@@ -1,7 +1,12 @@
-import { PartialType } from '@nestjs/mapped-types';
+import { IsObject, IsOptional, IsString, MaxLength } from 'class-validator';
 
-import { CreateCredentialDefinitionDto } from './create-credential-definition.dto';
+export class UpdateCredentialDefinitionDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  public name?: string;
 
-export class UpdateCredentialDefinitionDto extends PartialType(
-  CreateCredentialDefinitionDto,
-) {}
+  @IsOptional()
+  @IsObject()
+  public metadata?: Record<string, unknown>;
+}

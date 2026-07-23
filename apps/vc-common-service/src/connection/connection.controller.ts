@@ -74,7 +74,8 @@ export class ConnectionController {
   @ApiNotFoundResponse({ description: 'Tenant not found' })
   public async findByTenantId(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
-    @Query('state', new ParseEnumPipe(ConnectionState)) state?: ConnectionState,
+    @Query('state', new ParseEnumPipe(ConnectionState, { optional: true }))
+    state?: ConnectionState,
   ): Promise<Connection[]> {
     if (state) {
       return await this.connectionService.findByTenantIdAndState(
