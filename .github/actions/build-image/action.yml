@@ -3,7 +3,7 @@ description: Build a multi-arch Docker image and push to a container registry
 
 inputs:
   image_name:
-    description: "Full image name (e.g. ghcr.io/bcgov/vc-common-service)"
+    description: "Image repository path without the registry (e.g. bcgov/vc-common-service); the action prepends <registry>/ itself"
     required: true
   registry:
     description: "Container registry to push to"
@@ -23,6 +23,14 @@ inputs:
     description: "Path to Dockerfile relative to context"
     required: false
     default: "Dockerfile"
+  platforms:
+    description: "Target platforms for the image build"
+    required: false
+    default: "linux/amd64,linux/arm64"
+  pr_number:
+    description: "Pull request number. When set, produces pr-<N> and pr-<N>-<short-sha> tags instead of branch/semver tags."
+    required: false
+    default: ""
 
 outputs:
   image_ref:
@@ -34,11 +42,16 @@ outputs:
   tags:
     description: "All tags applied to the image"
     value: ${{ steps.meta.outputs.tags }}
+  image_tag:
+    description: "Immutable PR tag (pr-<N>-<short-sha>) when pr_number is set; the metadata version otherwise"
+    value: ${{ steps.tags.outputs.image_tag || steps.meta.outputs.version }}
 
 runs:
   using: composite
   steps:
     - name: Set up QEMU
+      # Emulation is only needed when building non-native (arm) platforms.
+      if: contains(inputs.platforms, 'arm')
       uses: docker/setup-qemu-action@29109295f81e9208d7d86ff1c6c12d2833863392 # v3.6.0
 
     - name: Set up Docker Buildx
@@ -51,16 +64,45 @@ runs:
         username: ${{ inputs.registry_username }}
         password: ${{ inputs.registry_password }}
 
+    # Single source for tag rules on both paths. Building the non-PR list in an
+    # expression is a trap: `\n` inside ${{ }} string literals is a literal
+    # backslash-n, which collapses the rules into one malformed line.
+    - name: Compute tag rules
+      id: tags
+      shell: bash
+      env:
+        PR_NUMBER: ${{ inputs.pr_number }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: |
+        if [ -n "${PR_NUMBER}" ]; then
+          SHORT_SHA="${HEAD_SHA:0:7}"
+          if [ -z "${SHORT_SHA}" ]; then
+            SHORT_SHA="${GITHUB_SHA:0:7}"
+          fi
+          echo "image_tag=pr-${PR_NUMBER}-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          {
+            echo "tags<<EOF"
+            echo "type=raw,value=pr-${PR_NUMBER}"
+            echo "type=raw,value=pr-${PR_NUMBER}-${SHORT_SHA}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        else
+          {
+            echo "tags<<EOF"
+            echo "type=sha,prefix=sha-"
+            echo "type=raw,value=main,enable={{is_default_branch}}"
+            echo "type=semver,pattern={{version}}"
+            echo "type=semver,pattern={{major}}.{{minor}}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Extract Docker metadata
       id: meta
       uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
       with:
         images: ${{ inputs.registry }}/${{ inputs.image_name }}
-        tags: |
-          type=sha,prefix=sha-
-          type=raw,value=main,enable={{is_default_branch}}
-          type=semver,pattern={{version}}
-          type=semver,pattern={{major}}.{{minor}}
+        tags: ${{ steps.tags.outputs.tags }}
 
     - name: Build and push image
       id: build
@@ -68,7 +110,7 @@ runs:
       with:
         context: ${{ inputs.context }}
         file: ${{ inputs.context }}/${{ inputs.dockerfile }}
-        platforms: linux/amd64,linux/arm64
+        platforms: ${{ inputs.platforms }}
         push: true
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}

@@ -1,0 +1,79 @@
+name: PR Database
+description: Create or drop a per-PR PostgreSQL database on the shared dev instance via oc exec. Requires the repository to be checked out (references the local pr-env-names action).
+
+inputs:
+  mode:
+    description: "Operation mode: 'create' or 'drop'"
+    required: true
+  pr_number:
+    description: "Pull request number (used to derive the database name vc_pr_<N>)"
+    required: true
+  db_workload:
+    description: "Kubernetes workload reference for the PostgreSQL pod (e.g. statefulset/postgres)"
+    required: false
+    default: ""
+  db_owner:
+    description: "PostgreSQL role to own the PR database"
+    required: false
+    default: "app"
+
+outputs:
+  db_name:
+    description: "Name of the PR database (vc_pr_<N>)"
+    value: ${{ steps.names.outputs.db_name }}
+
+runs:
+  using: composite
+  steps:
+    # Validates pr_number and derives db_name — the same single source of
+    # truth the workflows use.
+    - name: Derive PR environment names
+      id: names
+      uses: ./.github/actions/pr-env-names
+      with:
+        pr_number: ${{ inputs.pr_number }}
+
+    # Inputs are passed via env (not inline ${{ }} interpolation) so untrusted
+    # values can never rewrite the script before validation runs. db_name is
+    # safe by construction (validated integer embedded in a fixed pattern).
+    - name: Create or drop PR database
+      id: run
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        DB_NAME: ${{ steps.names.outputs.db_name }}
+        DB_WORKLOAD: ${{ inputs.db_workload }}
+        DB_OWNER: ${{ inputs.db_owner }}
+      run: |
+        if [[ "${MODE}" != "create" && "${MODE}" != "drop" ]]; then
+          echo "::error::mode must be 'create' or 'drop', got: '${MODE}'"
+          exit 1
+        fi
+        # An explicitly-passed empty db_owner (e.g. an unset repo variable)
+        # bypasses the input default, so re-apply it here; the value lands in a
+        # SQL statement, so accept plain identifiers only.
+        DB_OWNER="${DB_OWNER:-app}"
+        if ! [[ "${DB_OWNER}" =~ ^[A-Za-z0-9_]+$ ]]; then
+          echo "::error::db_owner must be a plain identifier, got: '${DB_OWNER}'"
+          exit 1
+        fi
+
+        if [[ -z "${DB_WORKLOAD}" ]]; then
+          echo "::notice::Dev database workload not configured (db_workload is empty). Skipping database ${MODE}."
+          exit 0
+        fi
+
+        if [[ "${MODE}" == "create" ]]; then
+          echo "Creating database ${DB_NAME} (owner: ${DB_OWNER})..."
+          oc exec "${DB_WORKLOAD}" -- bash -c "
+            psql -U postgres -tc \"SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'\" | grep -q 1 \
+            || psql -U postgres -c \"CREATE DATABASE ${DB_NAME} OWNER ${DB_OWNER}\"
+          "
+          echo "Database ${DB_NAME} ready."
+        else
+          echo "Dropping database ${DB_NAME}..."
+          oc exec "${DB_WORKLOAD}" -- bash -c "
+            psql -U postgres -c \"DROP DATABASE IF EXISTS ${DB_NAME} WITH (FORCE)\"
+          "
+          echo "Database ${DB_NAME} dropped."
+        fi

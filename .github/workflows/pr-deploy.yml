@@ -1,0 +1,183 @@
+name: PR Deploy
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+  deployments: write
+
+concurrency:
+  group: pr-env-${{ github.event.number }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.gate.outputs.build }}
+      deploy: ${{ steps.gate.outputs.deploy }}
+      release_name: ${{ steps.names.outputs.release_name }}
+      route_host: ${{ steps.names.outputs.route_host }}
+      db_name: ${{ steps.names.outputs.db_name }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      # Single source of truth for per-PR names, shared with pr-cleanup.yml
+      # and the pr-database action.
+      - name: Derive PR environment names
+        id: names
+        uses: ./.github/actions/pr-env-names
+        with:
+          pr_number: ${{ github.event.number }}
+
+      - name: Evaluate eligibility and secret availability
+        id: gate
+        env:
+          OPENSHIFT_SERVER: ${{ secrets.OPENSHIFT_SERVER }}
+          OPENSHIFT_TOKEN: ${{ secrets.OPENSHIFT_TOKEN }}
+          OPENSHIFT_NAMESPACE: ${{ secrets.OPENSHIFT_NAMESPACE }}
+        run: |
+          BUILD="false"
+          DEPLOY="false"
+
+          # Eligibility: bcgov-owned, non-fork, non-draft
+          if [[ "${{ github.repository_owner }}" == "bcgov" \
+             && "${{ github.event.pull_request.head.repo.fork }}" == "false" \
+             && "${{ github.event.pull_request.draft }}" == "false" ]]; then
+            BUILD="true"
+          fi
+
+          # Deploy secrets check
+          MISSING=""
+          if [[ -z "${OPENSHIFT_SERVER}" ]]; then MISSING="${MISSING} OPENSHIFT_SERVER"; fi
+          if [[ -z "${OPENSHIFT_TOKEN}" ]]; then MISSING="${MISSING} OPENSHIFT_TOKEN"; fi
+          if [[ -z "${OPENSHIFT_NAMESPACE}" ]]; then MISSING="${MISSING} OPENSHIFT_NAMESPACE"; fi
+
+          if [[ "${BUILD}" == "true" && -z "${MISSING}" ]]; then
+            DEPLOY="true"
+          elif [[ -n "${MISSING}" ]]; then
+            echo "::notice::Deploy secrets not configured:${MISSING}. Cluster jobs will be skipped."
+          fi
+
+          echo "build=${BUILD}" >> "${GITHUB_OUTPUT}"
+          echo "deploy=${DEPLOY}" >> "${GITHUB_OUTPUT}"
+
+  build:
+    needs: [preflight]
+    if: needs.preflight.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.build-image.outputs.image_tag }}
+    steps:
+      # Pin to the head SHA: the default merge-ref checkout drifts as main
+      # advances, so the pr-<N>-<short-sha> tag would name content that isn't
+      # that commit.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Build and push PR image
+        id: build-image
+        uses: ./.github/actions/build-image
+        with:
+          image_name: ${{ github.repository }}
+          registry_username: ${{ github.actor }}
+          registry_password: ${{ secrets.GITHUB_TOKEN }}
+          platforms: linux/amd64
+          pr_number: ${{ github.event.number }}
+
+  provision-db:
+    needs: [preflight]
+    if: needs.preflight.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Set up OpenShift access
+        uses: ./.github/actions/oc-setup
+        with:
+          openshift_server_url: ${{ secrets.OPENSHIFT_SERVER }}
+          openshift_token: ${{ secrets.OPENSHIFT_TOKEN }}
+          namespace: ${{ secrets.OPENSHIFT_NAMESPACE }}
+
+      - name: Create PR database
+        uses: ./.github/actions/pr-database
+        with:
+          mode: create
+          pr_number: ${{ github.event.number }}
+          db_workload: ${{ vars.PR_DB_WORKLOAD }}
+          db_owner: ${{ vars.PR_DB_OWNER }}
+
+  deploy:
+    needs: [preflight, build, provision-db]
+    if: needs.preflight.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pr-preview
+      url: https://${{ needs.preflight.outputs.route_host }}
+    steps:
+      # Head SHA for the same reason as the build job: the deployed chart
+      # must match the commit the sticky comment reports.
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up OpenShift access
+        uses: ./.github/actions/oc-setup
+        with:
+          openshift_server_url: ${{ secrets.OPENSHIFT_SERVER }}
+          openshift_token: ${{ secrets.OPENSHIFT_TOKEN }}
+          namespace: ${{ secrets.OPENSHIFT_NAMESPACE }}
+          setup_helm: "true"
+
+      - name: Deploy PR release
+        env:
+          RELEASE_NAME: ${{ needs.preflight.outputs.release_name }}
+          ROUTE_HOST: ${{ needs.preflight.outputs.route_host }}
+          DB_NAME: ${{ needs.preflight.outputs.db_name }}
+          DB_HOST: ${{ vars.PR_DB_HOST }}
+          IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
+        run: |
+          EXTRA_ARGS=()
+          if [ -n "${DB_HOST}" ]; then
+            EXTRA_ARGS+=(--set "config.DB_HOST=${DB_HOST}")
+          else
+            echo "::notice::PR_DB_HOST variable not set; using the DB_HOST default from values-pr.yaml."
+          fi
+
+          helm upgrade --install "${RELEASE_NAME}" ./charts/vc-common-service \
+            -f charts/vc-common-service/values-pr.yaml \
+            --set image.tag="${IMAGE_TAG}" \
+            --set config.DB_NAME="${DB_NAME}" \
+            --set route.host="${ROUTE_HOST}" \
+            "${EXTRA_ARGS[@]}" \
+            --wait --timeout 10m
+
+  comment:
+    needs: [preflight, build, deploy]
+    if: needs.preflight.outputs.deploy == 'true' && needs.deploy.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post sticky comment
+        uses: marocchino/sticky-pull-request-comment@67d0dec7b07ed060a405f9b2a64b8ab319fdd7db # v2.9.2
+        with:
+          header: pr-environment
+          message: |
+            ### 🚀 PR Environment
+
+            | | |
+            |---|---|
+            | **URL** | https://${{ needs.preflight.outputs.route_host }} |
+            | **Health** | https://${{ needs.preflight.outputs.route_host }}/health/live |
+            | **Image** | `ghcr.io/${{ github.repository }}:${{ needs.build.outputs.image_tag }}` |
+            | **Commit** | ${{ github.event.pull_request.head.sha }} |
+
+            _Updated on every push. Torn down automatically when this PR closes._
