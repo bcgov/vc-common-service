@@ -77,7 +77,12 @@ jobs:
     outputs:
       image_tag: ${{ steps.build-image.outputs.image_tag }}
     steps:
+      # Pin to the head SHA: the default merge-ref checkout drifts as main
+      # advances, so the pr-<N>-<short-sha> tag would name content that isn't
+      # that commit.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Build and push PR image
         id: build-image
@@ -119,7 +124,11 @@ jobs:
       name: pr-preview
       url: https://${{ needs.preflight.outputs.route_host }}
     steps:
+      # Head SHA for the same reason as the build job: the deployed chart
+      # must match the commit the sticky comment reports.
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Set up OpenShift access
         uses: ./.github/actions/oc-setup

@@ -129,7 +129,9 @@ jobs:
 
   clean-ghcr:
     needs: [preflight]
-    if: github.repository_owner == 'bcgov'
+    # Fork PRs never build pr-<N> images (deploy preflight excludes them) and
+    # get a read-only GITHUB_TOKEN, so the delete would only ever fail.
+    if: github.repository_owner == 'bcgov' && github.event.pull_request.head.repo.fork == false
     runs-on: ubuntu-latest
     steps:
       # NOTE: deleting versions of an org-owned package with GITHUB_TOKEN
