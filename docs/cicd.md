@@ -12,7 +12,7 @@ This document describes the continuous integration and delivery pipeline for vc-
 
 **How it works:**
 
-- **Pull requests** run CI checks only. No artifacts are published and no notifications are sent.
+- **Pull requests** run CI checks in this pipeline; no notifications are sent. Non-draft PRs additionally publish PR-scoped preview images (`pr-<N>`, `pr-<N>-<short-sha>`) and may deploy an ephemeral review environment via the separate `pr-deploy.yml` workflow — see [PR Environments](#pr-environments).
 - **Pushes to `main`** (merge commits) run CI checks, then build and publish a multi-arch container image to GHCR, then deploy it to the dev environment via `helm upgrade`, then notify the team via Teams.
 - **Version tags** (`v1.2.3`, `v2.0.0`, etc.) run CI checks, publish the container image with semver tags, package and publish the Helm chart as an OCI artifact, then notify the team.
 
