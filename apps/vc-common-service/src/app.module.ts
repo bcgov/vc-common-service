@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { ConnectionModule } from './connection/connection.module';
 import { CredentialDefinitionModule } from './credential-definition/credential-definition.module';
 import { HealthModule } from './health/health.module';
 import { JobsModule } from './jobs/jobs.module';
@@ -20,6 +21,7 @@ import { TenantUserModule } from './tenant-user/tenant-user.module';
     TenantModule,
     TenantUserModule,
     CredentialDefinitionModule,
+    ConnectionModule,
     JobsModule,
   ],
   controllers: [AppController],

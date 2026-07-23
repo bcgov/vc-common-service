@@ -4,6 +4,7 @@ import { InitialExtensions1783630501649 } from './migrations/000001_initial-exte
 import { CreateTenantEntity1784231917556 } from './migrations/000002_create-tenant-entity';
 import { CreateTenantUserEntity1784241747468 } from './migrations/000003_create-tenant-user-entity';
 import { CreateCredentialDefinitionRegistry1784316680145 } from './migrations/000004_create-credential-definition-registry';
+import { CreateConnectionState1784732194397 } from './migrations/000005_create-connection-state';
 import { buildSslConfig } from './ssl.util';
 
 export const AppDataSource = new DataSource({
@@ -19,6 +20,7 @@ export const AppDataSource = new DataSource({
     CreateTenantEntity1784231917556,
     CreateTenantUserEntity1784241747468,
     CreateCredentialDefinitionRegistry1784316680145,
+    CreateConnectionState1784732194397,
   ],
   ssl: buildSslConfig(
     process.env.DB_SSL,
