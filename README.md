@@ -65,6 +65,21 @@ npm run migrate:up
 
 See [DEVELOPER.md](docs/DEVELOPER.md#database-migrations) for detailed migration instructions.
 
+### Integration Test Database Profile
+
+Use Docker Compose's `test` profile for an isolated PostgreSQL-only integration
+test database on `localhost:5433`, then run integration tests against it:
+
+```bash
+docker compose --profile test up -d db-test migrate-test seed-test
+npm run test:integration
+docker compose --profile test down -v
+```
+
+See [DEVELOPER.md](docs/DEVELOPER.md#testing) for details on this and the
+other test tiers (unit/integration/e2e), plus `MockAdapter` and test data
+factory usage.
+
 ## Documentation
 
 - **[DEVELOPER.md](docs/DEVELOPER.md)** - Detailed setup, running, testing, and troubleshooting guide
@@ -101,6 +116,9 @@ npm run start:dev
 
 # Run unit tests
 npm run test
+
+# Run integration tests
+npm run test:integration
 
 # Run tests in watch mode
 npm run test:watch

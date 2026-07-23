@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import { InitialExtensions1783630501649 } from './migrations/000001_initial-extensions';
 import { CreateTenantEntity1784231917556 } from './migrations/000002_create-tenant-entity';
 import { CreateTenantUserEntity1784241747468 } from './migrations/000003_create-tenant-user-entity';
+import { CreateCredentialDefinitionRegistry1784316680145 } from './migrations/000004_create-credential-definition-registry';
 import { buildSslConfig } from './ssl.util';
 
 export const AppDataSource = new DataSource({
@@ -17,6 +18,7 @@ export const AppDataSource = new DataSource({
     InitialExtensions1783630501649,
     CreateTenantEntity1784231917556,
     CreateTenantUserEntity1784241747468,
+    CreateCredentialDefinitionRegistry1784316680145,
   ],
   ssl: buildSslConfig(
     process.env.DB_SSL,

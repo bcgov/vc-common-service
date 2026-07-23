@@ -143,6 +143,39 @@ npm run test:watch
 npm run test:cov
 ```
 
+Unit tests are named `*.spec.ts` and co-located under `src/` in `apps/` or `libs/`.
+
+### Run Integration Tests
+
+```bash
+npm run test:integration
+```
+
+Integration tests are named `*.integration-spec.ts` and co-located under
+`apps/` or `libs/` (e.g.
+`libs/credential-ports/src/testing/integration-smoke.integration-spec.ts`).
+They're excluded from the unit `jest` run and given their own config
+(`apps/vc-common-service/test/jest-integration.json`).
+
+By default `npm run test:integration` targets the local Docker Compose `test`
+profile's isolated PostgreSQL database (`localhost:5433` /
+`vc_common_service_test`), overridable via `DB_*` env vars. Start it first:
+
+```bash
+docker compose --profile test up -d db-test migrate-test seed-test
+npm run test:integration
+docker compose --profile test down -v
+```
+
+This starts `db-test` on port `5433`, runs migrations via `migrate-test`, and
+applies the placeholder seed script (`libs/database/src/seeds/test-seed.sql`,
+currently just a marker table until tenant/user entities exist).
+
+Note CI runs integration tests against a different PostgreSQL instance
+(GitHub Actions `services: postgres` on `localhost:5432` /
+`vc_common_service`) — check your `DB_*` variables if a test behaves
+differently locally vs. in CI.
+
 ### Run E2E Tests
 
 ```bash
@@ -150,6 +183,44 @@ npm run test:e2e
 ```
 
 Requires database to be running. Typically used in CI/CD pipelines.
+
+### Test Helpers
+
+`@app/credential-ports` exports shared test doubles and fixtures for use in
+any of the tiers above:
+
+- `MockAdapter` — a functional in-memory `AgentAdapter` test double.
+  Unlike the fail-closed `StubAdapter` (always rejects with
+  `NotImplementedException`), it can run in `success`, `delayed`, or
+  `failure` mode, persists state in memory, and records every call via
+  `getCalls()`/`reset()`:
+
+  ```ts
+  import { ConnectorUnavailableError, MockAdapter } from '@app/credential-ports';
+
+  const adapter = new MockAdapter();
+  adapter.configure({
+    mode: 'failure',
+    failureError: new ConnectorUnavailableError('Traction offline'),
+  });
+
+  await expect(adapter.getExchange('missing-id')).rejects.toThrow(
+    'Traction offline',
+  );
+  expect(adapter.getCalls('getExchange')).toHaveLength(1);
+  ```
+
+- Test data factories — `createTestTenant()`, `createTestUser()`,
+  `createTestClient()`, `createTestCredDef()`, and `createFullTenantSetup()`
+  (composes the above into a fully wired tenant fixture), each accepting
+  optional overrides:
+
+  ```ts
+  import { createFullTenantSetup } from '@app/credential-ports';
+
+  const setup = createFullTenantSetup({ tenant: { name: 'Docs Demo Tenant' } });
+  expect(setup.owner.tenantId).toBe(setup.tenant.id);
+  ```
 
 ## Code Quality
 

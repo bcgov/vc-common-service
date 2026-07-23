@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Response } from 'express';
 
+import { CredentialDefinitionModule } from '../credential-definition/credential-definition.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { TenantUserModule } from '../tenant-user/tenant-user.module';
 
@@ -99,7 +100,7 @@ export class SwaggerService {
       .build();
 
     const document = SwaggerModule.createDocument(app, config, {
-      include: [TenantModule, TenantUserModule],
+      include: [TenantModule, TenantUserModule, CredentialDefinitionModule],
     });
 
     SwaggerModule.setup('api/docs/tenant', app, document);
