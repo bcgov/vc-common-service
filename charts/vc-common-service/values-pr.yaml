@@ -1,7 +1,7 @@
 # PR Environment overlay — only deltas from the chart defaults.
 # Used by .github/workflows/pr-deploy.yml for ephemeral PR review environments.
 # Per-PR values (image.tag, config.DB_NAME, route.host) and config.DB_HOST
-# (from the DEV_DB_HOST repository variable) are injected via --set.
+# (from the PR_DB_HOST repository variable) are injected via --set.
 
 resources:
   requests:
