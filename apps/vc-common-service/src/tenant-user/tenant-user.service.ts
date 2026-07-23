@@ -61,7 +61,21 @@ export class TenantUserService {
   ): Promise<TenantUser> {
     const tenantUser = await this.findById(id);
 
-    Object.assign(tenantUser, dto);
+    if (dto.email !== undefined) {
+      tenantUser.email = dto.email;
+    }
+
+    if (dto.displayName !== undefined) {
+      tenantUser.displayName = dto.displayName;
+    }
+
+    if (dto.role !== undefined) {
+      tenantUser.role = dto.role;
+    }
+
+    if (dto.status !== undefined) {
+      tenantUser.status = dto.status;
+    }
 
     return await this.tenantUserRepository.update(tenantUser);
   }

@@ -30,7 +30,17 @@ export class TenantService {
       throw new NotFoundException('Tenant not found');
     }
 
-    Object.assign(tenant, dto);
+    if (dto.name !== undefined) {
+      tenant.name = dto.name;
+    }
+
+    if (dto.description !== undefined) {
+      tenant.description = dto.description;
+    }
+
+    if (dto.config !== undefined) {
+      tenant.config = dto.config;
+    }
 
     return this.tenants.save(tenant);
   }

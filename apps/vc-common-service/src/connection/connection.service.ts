@@ -7,6 +7,7 @@ import {
 import { Connection, ConnectionState } from './connection.entity';
 import { ConnectionRepository } from './connection.repository';
 import { CreateConnectionDto } from './dto/create-connection.dto';
+import { UpdateConnectionDto } from './dto/update-connection.dto';
 
 @Injectable()
 export class ConnectionService {
@@ -80,11 +81,29 @@ export class ConnectionService {
 
   public async update(
     id: string,
-    dto: Partial<CreateConnectionDto>,
+    dto: UpdateConnectionDto,
   ): Promise<Connection> {
     const connection = await this.findById(id);
 
-    Object.assign(connection, dto);
+    if (dto.theirLabel !== undefined) {
+      connection.theirLabel = dto.theirLabel;
+    }
+
+    if (dto.theirDid !== undefined) {
+      connection.theirDid = dto.theirDid;
+    }
+
+    if (dto.state !== undefined) {
+      connection.state = dto.state;
+    }
+
+    if (dto.protocol !== undefined) {
+      connection.protocol = dto.protocol;
+    }
+
+    if (dto.metadata !== undefined) {
+      connection.metadata = dto.metadata;
+    }
 
     return await this.connectionRepository.update(connection);
   }
