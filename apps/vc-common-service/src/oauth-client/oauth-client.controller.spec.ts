@@ -1,0 +1,115 @@
+import { Test, TestingModule } from '@nestjs/testing';
+
+import { CreateOAuthClientDto } from './dto/create-oauth-client.dto';
+import { OAuthClientController } from './oauth-client.controller';
+import { OAuthClient } from './oauth-client.entity';
+import { OAuthClientService } from './oauth-client.service';
+
+describe('OAuthClientController', () => {
+  let controller: OAuthClientController;
+
+  let mockCreateClient: jest.Mock;
+  let mockFindByClientId: jest.Mock;
+  let mockFindByTenant: jest.Mock;
+  let mockRevokeClient: jest.Mock;
+
+  const mockOAuthClient: OAuthClient = {
+    id: '123e4567-e89b-12d3-a456-426614174000',
+    tenantId: '123e4567-e89b-12d3-a456-426614174001',
+    clientId: 'client_abc123',
+    clientSecretHash: 'hashed_secret',
+    name: 'Test Client',
+    scopes: ['read:credentials'],
+    redirectUris: ['https://example.com/callback'],
+    grantTypes: ['client_credentials'],
+    createdBy: '123e4567-e89b-12d3-a456-426614174002',
+    createdAt: new Date(),
+    tenant: undefined as any,
+  };
+
+  beforeEach(async () => {
+    mockCreateClient = jest.fn();
+    mockFindByClientId = jest.fn();
+    mockFindByTenant = jest.fn();
+    mockRevokeClient = jest.fn();
+
+    const mockService = {
+      createClient: mockCreateClient,
+      findByClientId: mockFindByClientId,
+      findByTenant: mockFindByTenant,
+      revokeClient: mockRevokeClient,
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [OAuthClientController],
+      providers: [
+        {
+          provide: OAuthClientService,
+          useValue: mockService,
+        },
+      ],
+    }).compile();
+
+    controller = module.get<OAuthClientController>(OAuthClientController);
+  });
+
+  it('should be defined', () => {
+    expect(controller).toBeDefined();
+  });
+
+  describe('POST /oauth-clients', () => {
+    it('should create a new OAuth client', async () => {
+      const dto: CreateOAuthClientDto = {
+        tenantId: mockOAuthClient.tenantId,
+        name: mockOAuthClient.name,
+        scopes: mockOAuthClient.scopes,
+        redirectUris: mockOAuthClient.redirectUris,
+        createdBy: mockOAuthClient.createdBy,
+      };
+
+      const result = {
+        client: mockOAuthClient,
+        clientSecret: 'secret_abc123',
+      };
+
+      mockCreateClient.mockResolvedValue(result);
+
+      const response = await controller.createClient(dto);
+
+      expect(mockCreateClient).toHaveBeenCalledWith(dto);
+      expect(response).toEqual(result);
+    });
+  });
+
+  describe('GET /oauth-clients/client/:clientId', () => {
+    it('should find an OAuth client by client ID', async () => {
+      mockFindByClientId.mockResolvedValue(mockOAuthClient);
+
+      const result = await controller.findByClientId(mockOAuthClient.clientId);
+
+      expect(mockFindByClientId).toHaveBeenCalledWith(mockOAuthClient.clientId);
+      expect(result).toEqual(mockOAuthClient);
+    });
+  });
+
+  describe('GET /oauth-clients/tenant/:tenantId', () => {
+    it('should find all OAuth clients for a tenant', async () => {
+      mockFindByTenant.mockResolvedValue([mockOAuthClient]);
+
+      const result = await controller.findByTenant(mockOAuthClient.tenantId);
+
+      expect(mockFindByTenant).toHaveBeenCalledWith(mockOAuthClient.tenantId);
+      expect(result).toEqual([mockOAuthClient]);
+    });
+  });
+
+  describe('DELETE /oauth-clients/:id/revoke', () => {
+    it('should revoke an OAuth client', async () => {
+      mockRevokeClient.mockResolvedValue(undefined);
+
+      await controller.revokeClient(mockOAuthClient.id);
+
+      expect(mockRevokeClient).toHaveBeenCalledWith(mockOAuthClient.id);
+    });
+  });
+});

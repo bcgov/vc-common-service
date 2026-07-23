@@ -5,7 +5,9 @@ import { CreateTenantEntity1784231917556 } from './migrations/000002_create-tena
 import { CreateTenantUserEntity1784241747468 } from './migrations/000003_create-tenant-user-entity';
 import { CreateCredentialDefinitionRegistry1784316680145 } from './migrations/000004_create-credential-definition-registry';
 import { CreateConnectionState1784732194397 } from './migrations/000005_create-connection-state';
+import { CreateOauthClient1784761471729 } from './migrations/000006_create-oauth-client';
 import { CreateOperationEntity1784242000000 } from './migrations/000006_create-operation-entity';
+import { CreateConnectorCredential1784761690087 } from './migrations/000007_create-connector-credential';
 import { buildSslConfig } from './ssl.util';
 
 export const AppDataSource = new DataSource({
@@ -23,6 +25,8 @@ export const AppDataSource = new DataSource({
     CreateCredentialDefinitionRegistry1784316680145,
     CreateConnectionState1784732194397,
     CreateOperationEntity1784242000000,
+    CreateOauthClient1784761471729,
+    CreateConnectorCredential1784761690087,
   ],
   ssl: buildSslConfig(
     process.env.DB_SSL,

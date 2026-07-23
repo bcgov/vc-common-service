@@ -27,18 +27,45 @@ jest.mock('@nestjs/swagger', () => {
     },
   };
 });
-jest.mock('../tenant/tenant.module', () => ({
-  TenantModule: jest.fn(),
-}));
-jest.mock('../tenant-user/tenant-user.module', () => ({
-  TenantUserModule: jest.fn(),
-}));
-jest.mock('../credential-definition/credential-definition.module', () => ({
-  CredentialDefinitionModule: jest.fn(),
-}));
-jest.mock('../connection/connection.module', () => ({
-  ConnectionModule: jest.fn(),
-}));
+
+// Helper function to create module mocks from module paths
+const mockAppModules = (
+  modulePaths: string[],
+): Record<string, Record<string, jest.Mock>> => {
+  const mocks: Record<string, Record<string, jest.Mock>> = {};
+
+  modulePaths.forEach((modulePath) => {
+    const moduleNameWithExtension = modulePath.split('/').pop() || '';
+    const moduleName = moduleNameWithExtension.replace('.ts', '');
+    const exportName = moduleName
+      .split('-')
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join('');
+
+    mocks[modulePath] = {
+      [exportName]: jest.fn(),
+    };
+  });
+
+  return mocks;
+};
+
+// Mock all app modules
+const modulesToMock = [
+  '../tenant/tenant.module',
+  '../tenant-user/tenant-user.module',
+  '../credential-definition/credential-definition.module',
+  '../connection/connection.module',
+  '../oauth-client/oauth-client.module',
+  '../connector-credential/connector-credential.module',
+];
+
+const modulesMock = mockAppModules(modulesToMock);
+
+// Apply each mock
+Object.entries(modulesMock).forEach(([modulePath, moduleExport]) => {
+  jest.mock(modulePath, () => moduleExport);
+});
 
 import { SwaggerService } from './swagger.service';
 
