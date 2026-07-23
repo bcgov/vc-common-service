@@ -108,8 +108,8 @@ jobs:
         with:
           mode: create
           pr_number: ${{ github.event.number }}
-          db_workload: ${{ vars.DEV_DB_WORKLOAD }}
-          db_owner: ${{ vars.DEV_DB_OWNER }}
+          db_workload: ${{ vars.PR_DB_WORKLOAD }}
+          db_owner: ${{ vars.PR_DB_OWNER }}
 
   deploy:
     needs: [preflight, build, provision-db]
@@ -134,14 +134,14 @@ jobs:
           RELEASE_NAME: ${{ needs.preflight.outputs.release_name }}
           ROUTE_HOST: ${{ needs.preflight.outputs.route_host }}
           DB_NAME: ${{ needs.preflight.outputs.db_name }}
-          DB_HOST: ${{ vars.DEV_DB_HOST }}
+          DB_HOST: ${{ vars.PR_DB_HOST }}
           IMAGE_TAG: ${{ needs.build.outputs.image_tag }}
         run: |
           EXTRA_ARGS=()
           if [ -n "${DB_HOST}" ]; then
             EXTRA_ARGS+=(--set "config.DB_HOST=${DB_HOST}")
           else
-            echo "::notice::DEV_DB_HOST variable not set; the app will start with an empty DB_HOST and cannot reach a database."
+            echo "::notice::PR_DB_HOST variable not set; using the DB_HOST default from values-pr.yaml."
           fi
 
           helm upgrade --install "${RELEASE_NAME}" ./charts/vc-common-service \

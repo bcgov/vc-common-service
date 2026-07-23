@@ -125,7 +125,7 @@ jobs:
         with:
           mode: drop
           pr_number: ${{ github.event.number }}
-          db_workload: ${{ vars.DEV_DB_WORKLOAD }}
+          db_workload: ${{ vars.PR_DB_WORKLOAD }}
 
   clean-ghcr:
     needs: [preflight]
