@@ -39,6 +39,9 @@ jest.mock('../credential-definition/credential-definition.module', () => ({
 jest.mock('../connection/connection.module', () => ({
   ConnectionModule: jest.fn(),
 }));
+jest.mock('../operation/operation.module', () => ({
+  OperationModule: jest.fn(),
+}));
 
 import { SwaggerService } from './swagger.service';
 
