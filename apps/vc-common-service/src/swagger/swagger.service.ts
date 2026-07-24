@@ -5,6 +5,7 @@ import { Response } from 'express';
 
 import { ConnectionModule } from '../connection/connection.module';
 import { CredentialDefinitionModule } from '../credential-definition/credential-definition.module';
+import { OperationModule } from '../operation/operation.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { TenantUserModule } from '../tenant-user/tenant-user.module';
 
@@ -21,7 +22,7 @@ const swaggerApps = [
     title: 'VC Operations API',
     description: 'API endpoints for VC operations',
     version: '1.0',
-    modules: [ConnectionModule],
+    modules: [ConnectionModule, OperationModule],
   },
 ];
 

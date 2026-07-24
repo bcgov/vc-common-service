@@ -1,5 +1,16 @@
-import { PartialType } from '@nestjs/mapped-types';
+import { IsObject, IsOptional, IsString, Length } from 'class-validator';
 
-import { CreateTenantDto } from './create-tenant.dto';
+export class UpdateTenantDto {
+  @IsOptional()
+  @IsString()
+  @Length(1, 255)
+  public name?: string;
 
-export class UpdateTenantDto extends PartialType(CreateTenantDto) {}
+  @IsOptional()
+  @IsString()
+  public description?: string;
+
+  @IsOptional()
+  @IsObject()
+  public config?: Record<string, unknown>;
+}

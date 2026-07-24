@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 
 import { CreateTenantDto } from './dto/create-tenant.dto';
+import { UpdateTenantDto } from './dto/update-tenant.dto';
 import { TenantRepository } from './tenant.repository';
 
 @Injectable()
@@ -19,18 +20,6 @@ export class TenantService {
     }
 
     const tenant = this.tenants.create(dto);
-
-    return this.tenants.save(tenant);
-  }
-
-  public async update(id: string, dto: Partial<CreateTenantDto>) {
-    const tenant = await this.tenants.findById(id);
-
-    if (!tenant) {
-      throw new NotFoundException('Tenant not found');
-    }
-
-    Object.assign(tenant, dto);
 
     return this.tenants.save(tenant);
   }
@@ -57,6 +46,28 @@ export class TenantService {
     }
 
     return tenant;
+  }
+
+  public async update(id: string, dto: UpdateTenantDto) {
+    const tenant = await this.tenants.findById(id);
+
+    if (!tenant) {
+      throw new NotFoundException('Tenant not found');
+    }
+
+    if (dto.name !== undefined) {
+      tenant.name = dto.name;
+    }
+
+    if (dto.description !== undefined) {
+      tenant.description = dto.description;
+    }
+
+    if (dto.config !== undefined) {
+      tenant.config = dto.config;
+    }
+
+    return this.tenants.save(tenant);
   }
 
   public async delete(id: string) {
