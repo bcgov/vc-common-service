@@ -1358,9 +1358,10 @@ While full OTel instrumentation is post-MVP, **tenant-scoped log access is an MV
 
 The delivery mechanism is **Grafana backed by native Loki multi-tenancy**, fronted by a small **identity-aware gateway** — not an in-app log API. This decision (and the alternatives considered) is documented in [tenant-observability-design.md](./tenant-observability-design.md):
 
-- **Enforcement in the storage layer**: Loki runs with `auth_enabled: true`; each tenant's data is isolated by Loki tenant ID. No app-level query proxy is trusted with isolation.
-- **Zero per-tenant Grafana resources**: one shared "Tenants" org, one datasource, one generic dashboard set — scoping comes from the caller's identity, not per-tenant config.
-- **App-issued tokens**: Grafana authenticates as an OIDC client of vc-common-service's `oidc-provider` (which federates upstream to Keycloak). The gateway validates the app-issued JWT the same way the API's guard does (AU-03) and never trusts a client-supplied identifier.
+- **Enforcement in the storage layer**: Loki runs with `auth_enabled: true`; each tenant's data is isolated by Loki tenant ID. No app-level query proxy is trusted with isolation. A global Loki `limits_config` is a prerequisite before exposing LogQL to external tenants.
+- **Zero per-tenant Grafana resources**: a **dedicated tenant-facing Grafana instance** (single org, one datasource, one generic dashboard set) — scoping comes from the caller's identity, not per-tenant config. A dedicated instance is required because the platform Grafana already has a single `generic_oauth` provider and can't host a second (tenant) one.
+- **App-issued tokens + `logs:read` authorization**: Grafana authenticates as an OIDC client of vc-common-service's `oidc-provider` (which federates upstream to Keycloak). The gateway validates the app-issued JWT the same way the API's guard does (AU-03), **requires the `logs:read` scope (fail closed)**, and never trusts a client-supplied identifier.
+- **Two ingestion paths**: in-cluster logs flow services → Alloy → Loki; the BC Wallet team also pushes directly (curl + basic auth) via an nginx gateway that injects `X-Scope-OrgID`. Traction must emit **JSON** logs (`ACAPY_LOG_CONFIG`) before its per-tenant field can be routed. Full detail in [tenant-observability-design.md](./tenant-observability-design.md).
 
 #### Architecture
 
@@ -1368,27 +1369,31 @@ The delivery mechanism is **Grafana backed by native Loki multi-tenancy**, front
 flowchart LR
     subgraph Sources ["Log Sources"]
         API["NestJS API<br/>structured JSON to stdout (tenant_id)"]
-        Adapter["TractionAdapter<br/>HTTP req/res + X-Wallet-ID"]
-        Traction["Traction / ACA-Py<br/>agent logs (wallet_id)"]
+        Adapter["TractionAdapter<br/>outbound calls (sub-wallet bearer token)"]
+        Traction["Traction / ACA-Py<br/>agent logs (traction_tenant_id, JSON via ACAPY_LOG_CONFIG)"]
+        BCW["BC Wallet apps<br/>external direct push (curl + basic auth)"]
     end
     subgraph Ship ["Log Shipping"]
-        Alloy["Grafana Alloy<br/>stage.tenant routing<br/>(tenant_id or wallet_id)"]
+        Alloy["Grafana Alloy<br/>stage.json to stage.tenant<br/>(tenant_id or traction_tenant_id)"]
+        Nginx["nginx write gateway<br/>basic auth to X-Scope-OrgID"]
     end
     subgraph Store ["Storage"]
-        Loki[("Loki auth_enabled true<br/>per-tenant isolation")]
+        Loki[("Loki auth_enabled true<br/>global limits_config<br/>per-tenant isolation")]
     end
-    subgraph GW ["Identity-Aware Gateway"]
-        Gate["validate app JWT<br/>tenant_id to wallet_id<br/>set X-Scope-OrgID"]
+    subgraph GW ["Read Gateway (identity-aware)"]
+        Gate["validate app JWT + logs:read<br/>tenant_id to traction_tenant_id<br/>set X-Scope-OrgID"]
     end
     subgraph Access ["Tenant Access"]
-        Grafana["Grafana shared Tenants org<br/>oauthPassThru datasource<br/>generic dashboards"]
+        Grafana["Dedicated tenant Grafana<br/>oauthPassThru datasource<br/>generic dashboards"]
         Embed["Admin dashboard<br/>embedded Grafana panel (UI-08)"]
     end
 
     API --> Alloy
     Adapter --> Alloy
     Traction --> Alloy
+    BCW --> Nginx
     Alloy --> Loki
+    Nginx --> Loki
     Grafana -->|forwards app token| Gate
     Gate -->|X-Scope-OrgID| Loki
     Embed --> Grafana
@@ -1403,20 +1408,20 @@ Every log line emitted by vc-common-service includes labels for Loki indexing:
 | `app` | Low (1-2) | `vc-common-service` (or `traction` for raw agent logs) |
 | `tenant_id` | Medium | Extracted from AsyncLocalStorage request context |
 | `source` | Low (4 values) | `api`, `adapter:traction`, `adapter:credo`, `webhook` |
-| `wallet_id` | Medium | Traction sub-tenant ID (only on `app=traction` streams) |
+| `traction_tenant_id` | Medium | Traction sub-tenant id (only on `app=traction` streams; surfaced once Traction logs JSON) |
 
 Structured metadata (Loki 3.x) or JSON fields (queryable with `| json`):
 - `operation_id`, `request_id`, `level`, `traction_state`, `traction_endpoint`, `error_code`, `duration_ms`
 
 #### Log routing (Loki multi-tenancy)
 
-Alloy routes each line to a Loki tenant via `stage.tenant`: vc-common-service lines by `tenant_id`, Traction/ACA-Py lines by `wallet_id`. Because a tenant's data therefore lives under **two** Loki tenants, the gateway sets a pipe-joined scope so the tenant sees both — and only their own:
+Alloy routes each line to a Loki tenant via `stage.tenant`: vc-common-service lines by `tenant_id`, Traction/ACA-Py lines by `traction_tenant_id` (this depends on Traction emitting JSON logs via `ACAPY_LOG_CONFIG` — plain text today). Because a tenant's data therefore lives under **two** Loki tenants, the gateway sets a pipe-joined scope so the tenant sees both — and only their own:
 
 ```
-X-Scope-OrgID: <tenant_id>|<wallet_id>   # requires Loki multi_tenant_queries_enabled
+X-Scope-OrgID: <tenant_id>|<traction_tenant_id>   # requires Loki multi_tenant_queries_enabled
 ```
 
-Within that scope, dashboards select streams the normal way (`{app="vc-common-service"}`, `{app="traction"}`, filtered by the `source` label). The tenant never supplies `tenant_id` or `wallet_id` — the scope is fixed by the gateway from the validated token.
+The BC Wallet team pushes logs directly to Loki (bypassing Alloy); the nginx write gateway injects their `X-Scope-OrgID` from the basic-auth identity. Within a scope, dashboards select streams the normal way (`{app="vc-common-service"}`, `{app="traction"}`, filtered by the `source` label). The tenant never supplies `tenant_id` or `traction_tenant_id` — the scope is fixed by the gateway from the validated token.
 
 #### Security: tenant isolation
 
@@ -1425,25 +1430,28 @@ sequenceDiagram
     participant User as Tenant User (browser)
     participant Grafana
     participant Gate as Identity-Aware Gateway
-    participant DB as ConnectorCredential Table
+    participant DB as ConnectorCredential (PE-06)
     participant Loki
 
     User->>Grafana: Open dashboard (logged in via vc-common-service oidc-provider)
     Grafana->>Gate: Query + forwarded app JWT (oauthPassThru)
-    Gate->>Gate: Validate JWT vs vc-common-service JWKS; extract tenant_id claim
-    Gate->>DB: Resolve wallet_id for tenant_id (cached)
-    DB-->>Gate: wallet_id
-    Gate->>Gate: Set X-Scope-OrgID (tenant_id and wallet_id); strip Authorization
+    Gate->>Gate: Validate JWT vs vc-common-service JWKS; require logs:read (fail closed); extract tenant_id
+    Gate->>DB: Resolve traction_tenant_id for tenant_id (cached)
+    DB-->>Gate: traction_tenant_id
+    Gate->>Gate: Set X-Scope-OrgID (tenant_id and traction_tenant_id); strip Authorization
     Gate->>Loki: Forward query (LogQL untouched)
     Loki-->>User: Only this tenant's vc-common-service + Traction streams
 ```
 
-**Key invariant**: the tenant scope is derived **only** from the validated app JWT plus a server-side registry lookup — never from a client-supplied parameter. A tenant may craft any LogQL (Explore, `/api/ds/query`, curl) and still only ever receives their own streams, because Loki enforces the `X-Scope-OrgID` the gateway set.
+**Key invariant**: the tenant scope is derived **only** from the validated app JWT (with a `logs:read` check) plus a server-side `ConnectorCredential` lookup — never from a client-supplied parameter. A tenant may craft any LogQL (Explore, `/api/ds/query`, curl) and still only ever receives their own streams, because Loki enforces the `X-Scope-OrgID` the gateway set.
 
 Attack prevention:
-- Tenant manipulates `wallet_id` / `tenant_id` in a query → the gateway ignores query content; scope comes from the JWT + registry lookup
-- Tenant spoofs `X-Scope-OrgID` → the gateway strips and sets the header itself; Loki is network-isolated (NetworkPolicy) and not directly reachable
-- Tenant registers another tenant's Traction wallet → blocked at connector creation (TM-07 validates ownership by authenticating against Traction and verifying tenant response)
+- Tenant manipulates `traction_tenant_id` / `tenant_id` in a query → the gateway ignores query content; scope comes from the JWT + `ConnectorCredential` lookup
+- Tenant without `logs:read` → the gateway fails closed (403) before any Loki call
+- Tenant spoofs `X-Scope-OrgID` → the gateway strips and sets the header itself; Loki is network-isolated (NetworkPolicy — dev/test hardening required) and not directly reachable
+- Tenant registers another tenant's Traction sub-tenant → blocked at connector creation (TM-07 validates ownership by authenticating against Traction and verifying tenant response)
+
+> `ConnectorCredential` is a planned **P0** entity (PE-06); today only `Connection` exists in code. `traction_tenant_id` should be a queryable column on `ConnectorCredential` — CT-06 already resolves the tenant from it on inbound webhooks; the gateway needs the reverse.
 
 #### Adapter Instrumentation Points
 
@@ -1460,7 +1468,7 @@ Redaction rules: never log `api_key`, credential claim values, DID private keys.
 
 #### Frontend: embedded Grafana (UI-08)
 
-Tenants view logs through Grafana, surfaced in the admin dashboard via an **authenticated iframe embed** (`allow_embedding`) or a deep-link — both scope automatically to the logged-in tenant (same `oidc-provider` session, same app token forwarded to the gateway). Filtering, search, live tail, and time ranges are provided by Grafana dashboards/Explore rather than a bespoke component. An operation deep-link opens the log view pre-filtered by `operation_id` (Grafana dashboard variable). No `@xterm` console or in-app `/logs` endpoint is built.
+Tenants view logs through the **dedicated tenant Grafana instance**, surfaced in the admin dashboard via an **authenticated iframe embed** or a deep-link — both scope automatically to the logged-in tenant (same `oidc-provider` session, same app token forwarded to the gateway). Embedding requires **`allow_embedding = true`** (currently unset — defaults to false) plus a CSP `frame-ancestors` allowance for the admin-dashboard origin. Filtering, search, live tail, and time ranges are provided by Grafana dashboards/Explore rather than a bespoke component. An operation deep-link opens the log view pre-filtered by `operation_id` (Grafana dashboard variable). No `@xterm` console or in-app `/logs` endpoint is built.
 
 ### OpenTelemetry pipeline (post-MVP)
 

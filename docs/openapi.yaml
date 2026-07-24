@@ -186,7 +186,9 @@ tags:
       Append-only audit trail for all credential operations and admin actions within a tenant.
       Supports filtered queries and CSV export for compliance reporting.
       **Audience**: Tenant administrators.
-      **Auth**: `logs:read` scope.
+      **Auth**: `audit:read` scope. (Distinct from `logs:read`, which gates tenant-scoped
+      observability/log access via the Grafana gateway — audit-log API access should not imply
+      Grafana log access, or vice-versa.)
 
   - name: Events
     description: |
