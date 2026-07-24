@@ -1,6 +1,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
+import { EncryptionService } from '../common/crypto/encryption.service';
 import { ConnectorType } from '../connection/connection.entity';
 
 import { ConnectorCredential } from './connector-credential.entity';
@@ -57,6 +58,15 @@ describe('ConnectorCredentialService', () => {
         {
           provide: ConnectorCredentialRepository,
           useValue: mockRepository,
+        },
+        {
+          provide: EncryptionService,
+          useValue: {
+            encrypt: jest.fn().mockReturnValue({
+              ciphertext: Buffer.from('encrypted_data'),
+              keyVersion: 1,
+            }),
+          },
         },
       ],
     }).compile();

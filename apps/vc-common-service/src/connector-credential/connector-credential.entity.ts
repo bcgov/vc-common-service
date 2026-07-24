@@ -62,7 +62,7 @@ export class ConnectorCredential {
     name: 'credentials_encrypted',
     type: 'bytea',
   })
-  public credentialsEncrypted!: Buffer;
+  public credentialsEncrypted!: Buffer<ArrayBufferLike>;
 
   @ApiProperty({
     description: 'The endpoint URL for this connector',

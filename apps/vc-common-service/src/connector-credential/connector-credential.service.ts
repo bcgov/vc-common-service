@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 
+import { EncryptionService } from '../common/crypto/encryption.service';
 import { ConnectorType } from '../connection/connection.entity';
 
 import { ConnectorCredential } from './connector-credential.entity';
@@ -11,20 +12,23 @@ import { UpdateConnectorCredentialDto } from './dto/update-connector-credential.
 export class ConnectorCredentialService {
   public constructor(
     private readonly credentialRepository: ConnectorCredentialRepository,
+    private readonly encryptionService: EncryptionService,
   ) {}
 
   public async create(
     dto: CreateConnectorCredentialDto,
   ): Promise<ConnectorCredential> {
-    const credentialsBuffer = Buffer.from(dto.credentialsEncrypted, 'base64');
+    const encryptedCredentials = this.encryptionService.encrypt(
+      dto.credentialsEncrypted,
+    );
 
     const credential = await this.credentialRepository.create({
       tenantId: dto.tenantId,
       connectorType: dto.connectorType,
-      credentialsEncrypted: credentialsBuffer,
+      credentialsEncrypted: encryptedCredentials.ciphertext,
       endpointUrl: dto.endpointUrl,
       active: dto.active ?? true,
-      keyVersion: dto.keyVersion ?? 1,
+      keyVersion: encryptedCredentials.keyVersion,
     } as ConnectorCredential);
 
     return credential;

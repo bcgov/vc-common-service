@@ -4,6 +4,7 @@ import { ConfigModule } from '@nestjs/config';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { EncryptionModule } from './common/crypto/encryption.module';
 import { ConnectionModule } from './connection/connection.module';
 import { ConnectorCredentialModule } from './connector-credential/connector-credential.module';
 import { CredentialDefinitionModule } from './credential-definition/credential-definition.module';
@@ -18,17 +19,18 @@ import { TenantUserModule } from './tenant-user/tenant-user.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ConnectionModule,
+    ConnectorCredentialModule,
+    CredentialDefinitionModule,
     DatabaseModule,
+    EncryptionModule,
     HealthModule,
+    JobsModule,
+    OAuthClientModule,
+    OperationModule,
     ShutdownModule,
     TenantModule,
     TenantUserModule,
-    CredentialDefinitionModule,
-    ConnectionModule,
-    OperationModule,
-    OAuthClientModule,
-    ConnectorCredentialModule,
-    JobsModule,
   ],
   controllers: [AppController],
   providers: [AppService],
