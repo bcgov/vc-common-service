@@ -4,7 +4,9 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { Response } from 'express';
 
 import { ConnectionModule } from '../connection/connection.module';
+import { ConnectorCredentialModule } from '../connector-credential/connector-credential.module';
 import { CredentialDefinitionModule } from '../credential-definition/credential-definition.module';
+import { OAuthClientModule } from '../oauth-client/oauth-client.module';
 import { TenantModule } from '../tenant/tenant.module';
 import { TenantUserModule } from '../tenant-user/tenant-user.module';
 
@@ -21,7 +23,7 @@ const swaggerApps = [
     title: 'VC Operations API',
     description: 'API endpoints for VC operations',
     version: '1.0',
-    modules: [ConnectionModule],
+    modules: [ConnectionModule, ConnectorCredentialModule, OAuthClientModule],
   },
 ];
 

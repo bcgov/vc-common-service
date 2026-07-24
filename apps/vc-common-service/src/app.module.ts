@@ -5,9 +5,11 @@ import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConnectionModule } from './connection/connection.module';
+import { ConnectorCredentialModule } from './connector-credential/connector-credential.module';
 import { CredentialDefinitionModule } from './credential-definition/credential-definition.module';
 import { HealthModule } from './health/health.module';
 import { JobsModule } from './jobs/jobs.module';
+import { OAuthClientModule } from './oauth-client/oauth-client.module';
 import { OperationModule } from './operation/operation.module';
 import { ShutdownModule } from './shutdown/shutdown.module';
 import { TenantModule } from './tenant/tenant.module';
@@ -24,6 +26,8 @@ import { TenantUserModule } from './tenant-user/tenant-user.module';
     CredentialDefinitionModule,
     ConnectionModule,
     OperationModule,
+    OAuthClientModule,
+    ConnectorCredentialModule,
     JobsModule,
   ],
   controllers: [AppController],
