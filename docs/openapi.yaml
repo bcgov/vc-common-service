@@ -3554,6 +3554,7 @@ components:
               - users:manage
               - clients:manage
               - logs:read
+              - audit:read
               - tenants:admin
 
     # ─── Credential ─────────────────────────────────────────────────
