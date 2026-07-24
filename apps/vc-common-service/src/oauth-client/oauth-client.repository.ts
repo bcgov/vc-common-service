@@ -40,6 +40,10 @@ export class OAuthClientRepository {
     return await this.repository.save(entity);
   }
 
+  public async update(client: OAuthClient): Promise<OAuthClient> {
+    return await this.repository.save(client);
+  }
+
   public async revoke(id: string): Promise<void> {
     await this.repository.update(id, {
       revokedAt: new Date(),

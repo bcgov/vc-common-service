@@ -4,6 +4,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { argon2i, hash, verify } from 'argon2';
 
 import { CreateOAuthClientDto } from './dto/create-oauth-client.dto';
+import { UpdateOAuthClientDto } from './dto/update-oauth-client.dto';
 import { OAuthClient } from './oauth-client.entity';
 import { OAuthClientRepository } from './oauth-client.repository';
 
@@ -48,6 +49,35 @@ export class OAuthClientService {
 
   public async findByTenant(tenantId: string): Promise<OAuthClient[]> {
     return await this.oauthClientRepository.findByTenant(tenantId);
+  }
+
+  public async update(
+    id: string,
+    dto: UpdateOAuthClientDto,
+  ): Promise<OAuthClient> {
+    const client = await this.oauthClientRepository.findById(id);
+
+    if (!client) {
+      throw new NotFoundException(`OAuth client '${id}' was not found.`);
+    }
+
+    if (dto.name === client.name) {
+      client.name = dto.name;
+    }
+
+    if (dto.scopes === client.scopes) {
+      client.scopes = dto.scopes;
+    }
+
+    if (dto.redirectUris === client.redirectUris) {
+      client.redirectUris = dto.redirectUris;
+    }
+
+    if (dto.grantTypes === client.grantTypes) {
+      client.grantTypes = dto.grantTypes;
+    }
+
+    return this.oauthClientRepository.update(client);
   }
 
   public async revokeClient(id: string): Promise<void> {

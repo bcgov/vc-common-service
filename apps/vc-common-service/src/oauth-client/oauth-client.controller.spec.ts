@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 
 import { CreateOAuthClientDto } from './dto/create-oauth-client.dto';
 import { OAuthClientResponseDto } from './dto/oauth-client-response.dto';
+import { UpdateOAuthClientDto } from './dto/update-oauth-client.dto';
 import { OAuthClientController } from './oauth-client.controller';
 import { OAuthClient } from './oauth-client.entity';
 import { OAuthClientService } from './oauth-client.service';
@@ -13,6 +14,7 @@ describe('OAuthClientController', () => {
   let mockFindByClientId: jest.Mock;
   let mockFindByTenant: jest.Mock;
   let mockRevokeClient: jest.Mock;
+  let mockUpdate: jest.Mock;
 
   const mockOAuthClient: OAuthClient = {
     id: '123e4567-e89b-12d3-a456-426614174000',
@@ -47,12 +49,14 @@ describe('OAuthClientController', () => {
     mockFindByClientId = jest.fn();
     mockFindByTenant = jest.fn();
     mockRevokeClient = jest.fn();
+    mockUpdate = jest.fn();
 
     const mockService = {
       createClient: mockCreateClient,
       findByClientId: mockFindByClientId,
       findByTenant: mockFindByTenant,
       revokeClient: mockRevokeClient,
+      update: mockUpdate,
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -128,6 +132,47 @@ describe('OAuthClientController', () => {
       await controller.revokeClient(mockOAuthClient.id);
 
       expect(mockRevokeClient).toHaveBeenCalledWith(mockOAuthClient.id);
+    });
+  });
+
+  describe('PATCH /oauth-clients/:id', () => {
+    it('should update an OAuth client', async () => {
+      const dto: UpdateOAuthClientDto = {
+        name: 'Updated Client',
+        scopes: ['read:credentials', 'write:credentials'],
+      };
+
+      const updatedClient: OAuthClient = {
+        ...mockOAuthClient,
+        ...dto,
+      };
+
+      mockUpdate.mockResolvedValue(updatedClient);
+
+      const result = await controller.update(mockOAuthClient.id, dto);
+
+      expect(mockUpdate).toHaveBeenCalledWith(mockOAuthClient.id, dto);
+      expect(result.name).toBe('Updated Client');
+      expect(result.scopes).toEqual(['read:credentials', 'write:credentials']);
+    });
+
+    it('should update only specified fields', async () => {
+      const dto: UpdateOAuthClientDto = {
+        name: 'New Name',
+      };
+
+      const updatedClient: OAuthClient = {
+        ...mockOAuthClient,
+        name: 'New Name',
+      };
+
+      mockUpdate.mockResolvedValue(updatedClient);
+
+      const result = await controller.update(mockOAuthClient.id, dto);
+
+      expect(mockUpdate).toHaveBeenCalledWith(mockOAuthClient.id, dto);
+      expect(result.name).toBe('New Name');
+      expect(result.scopes).toEqual(mockOAuthClient.scopes);
     });
   });
 });

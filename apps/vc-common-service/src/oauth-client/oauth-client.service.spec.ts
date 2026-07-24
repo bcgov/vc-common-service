@@ -20,6 +20,7 @@ describe('OAuthClientService', () => {
   let mockFindByTenant: jest.Mock;
   let mockCreate: jest.Mock;
   let mockRevoke: jest.Mock;
+  let mockUpdate: jest.Mock;
   let mockRepository: any;
 
   const mockOAuthClient: OAuthClient = {
@@ -42,6 +43,7 @@ describe('OAuthClientService', () => {
     mockFindByTenant = jest.fn();
     mockCreate = jest.fn();
     mockRevoke = jest.fn();
+    mockUpdate = jest.fn();
 
     mockRepository = {
       findOne: jest.fn(),
@@ -53,6 +55,7 @@ describe('OAuthClientService', () => {
       findByTenant: mockFindByTenant,
       create: mockCreate,
       revoke: mockRevoke,
+      update: mockUpdate,
       repository: mockRepository,
     };
 
@@ -202,6 +205,53 @@ describe('OAuthClientService', () => {
       );
 
       expect(result).toBe(false);
+    });
+  });
+
+  describe('update', () => {
+    it('should update an OAuth client with new values', async () => {
+      mockFindById.mockResolvedValue(mockOAuthClient);
+      const updatedClient = {
+        ...mockOAuthClient,
+        name: 'Updated Client',
+        scopes: ['read:credentials', 'write:credentials'],
+      };
+      mockUpdate.mockResolvedValue(updatedClient);
+
+      const result = await service.update(mockOAuthClient.id, {
+        name: 'Updated Client',
+        scopes: ['read:credentials', 'write:credentials'],
+      });
+
+      expect(mockFindById).toHaveBeenCalledWith(mockOAuthClient.id);
+      expect(mockUpdate).toHaveBeenCalled();
+      expect(result.name).toBe('Updated Client');
+      expect(result.scopes).toEqual(['read:credentials', 'write:credentials']);
+    });
+
+    it('should preserve existing values when partial update is provided', async () => {
+      mockFindById.mockResolvedValue(mockOAuthClient);
+      const updatedClient = {
+        ...mockOAuthClient,
+        name: 'Updated Name',
+      };
+      mockUpdate.mockResolvedValue(updatedClient);
+
+      const result = await service.update(mockOAuthClient.id, {
+        name: 'Updated Name',
+      });
+
+      expect(result.name).toBe('Updated Name');
+      expect(result.scopes).toEqual(mockOAuthClient.scopes);
+      expect(result.redirectUris).toEqual(mockOAuthClient.redirectUris);
+    });
+
+    it('should throw NotFoundException if client not found', async () => {
+      mockFindById.mockResolvedValue(null);
+
+      await expect(
+        service.update('nonexistent', { name: 'Updated Name' }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 });
