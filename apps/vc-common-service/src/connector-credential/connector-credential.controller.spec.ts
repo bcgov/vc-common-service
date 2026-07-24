@@ -5,6 +5,7 @@ import { ConnectorType } from '../connection/connection.entity';
 import { ConnectorCredentialController } from './connector-credential.controller';
 import { ConnectorCredential } from './connector-credential.entity';
 import { ConnectorCredentialService } from './connector-credential.service';
+import { ConnectorCredentialResponseDto } from './dto/connector-credential-response.dto';
 import { CreateConnectorCredentialDto } from './dto/create-connector-credential.dto';
 
 describe('ConnectorCredentialController', () => {
@@ -29,6 +30,17 @@ describe('ConnectorCredentialController', () => {
     createdAt: new Date(),
     updatedAt: new Date(),
     tenant: undefined as any,
+  };
+
+  const mockResponseDto: ConnectorCredentialResponseDto = {
+    id: mockCredential.id,
+    tenantId: mockCredential.tenantId,
+    connectorType: mockCredential.connectorType,
+    endpointUrl: mockCredential.endpointUrl,
+    active: mockCredential.active,
+    keyVersion: mockCredential.keyVersion,
+    createdAt: mockCredential.createdAt,
+    updatedAt: mockCredential.updatedAt,
   };
 
   beforeEach(async () => {
@@ -86,7 +98,7 @@ describe('ConnectorCredentialController', () => {
       const result = await controller.create(dto);
 
       expect(mockCreate).toHaveBeenCalledWith(dto);
-      expect(result).toEqual(mockCredential);
+      expect(result).toEqual(mockResponseDto);
     });
   });
 
@@ -97,7 +109,7 @@ describe('ConnectorCredentialController', () => {
       const result = await controller.findById(mockCredential.id);
 
       expect(mockFindById).toHaveBeenCalledWith(mockCredential.id);
-      expect(result).toEqual(mockCredential);
+      expect(result).toEqual(mockResponseDto);
     });
   });
 
@@ -108,7 +120,7 @@ describe('ConnectorCredentialController', () => {
       const result = await controller.findByTenant(mockCredential.tenantId);
 
       expect(mockFindByTenant).toHaveBeenCalledWith(mockCredential.tenantId);
-      expect(result).toEqual([mockCredential]);
+      expect(result).toEqual([mockResponseDto]);
     });
 
     it('should filter by connector type when provided', async () => {
@@ -123,7 +135,7 @@ describe('ConnectorCredentialController', () => {
         mockCredential.tenantId,
         mockCredential.connectorType,
       );
-      expect(result).toEqual([mockCredential]);
+      expect(result).toEqual([mockResponseDto]);
     });
 
     it('should filter by connector type and active status when both provided', async () => {
@@ -142,7 +154,7 @@ describe('ConnectorCredentialController', () => {
         mockCredential.connectorType,
         true,
       );
-      expect(result).toEqual([mockCredential]);
+      expect(result).toEqual([mockResponseDto]);
     });
   });
 
@@ -150,13 +162,14 @@ describe('ConnectorCredentialController', () => {
     it('should update a connector credential', async () => {
       const updateDto = { active: false };
       const updatedCredential = { ...mockCredential, active: false };
+      const updatedResponseDto = { ...mockResponseDto, active: false };
 
       mockUpdate.mockResolvedValue(updatedCredential);
 
       const result = await controller.update(mockCredential.id, updateDto);
 
       expect(mockUpdate).toHaveBeenCalledWith(mockCredential.id, updateDto);
-      expect(result).toEqual(updatedCredential);
+      expect(result).toEqual(updatedResponseDto);
     });
   });
 

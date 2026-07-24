@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
-import { createHash } from 'crypto';
 
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { argon2i, hash, verify } from 'argon2';
 
 import { CreateOAuthClientDto } from './dto/create-oauth-client.dto';
 import { OAuthClient } from './oauth-client.entity';
@@ -18,7 +18,7 @@ export class OAuthClientService {
   ): Promise<{ client: OAuthClient; clientSecret: string }> {
     const clientSecret = randomBytes(32).toString('hex');
     const clientId = this.generateClientId();
-    const clientSecretHash = this.hashClientSecret(clientSecret);
+    const clientSecretHash = await this.hashClientSecret(clientSecret);
 
     const client = await this.oauthClientRepository.create({
       tenantId: dto.tenantId,
@@ -51,7 +51,7 @@ export class OAuthClientService {
   }
 
   public async revokeClient(id: string): Promise<void> {
-    const client = await this.oauthClientRepository.findByClientId(id);
+    const client = await this.oauthClientRepository.findById(id);
 
     if (!client) {
       throw new NotFoundException(`OAuth client '${id}' was not found.`);
@@ -70,15 +70,19 @@ export class OAuthClientService {
       return false;
     }
 
-    const secretHash = this.hashClientSecret(clientSecret);
-    return secretHash === client.clientSecretHash;
+    return await verify(client.clientSecretHash, clientSecret);
   }
 
   private generateClientId(): string {
     return `client_${randomBytes(16).toString('hex')}`;
   }
 
-  private hashClientSecret(secret: string): string {
-    return createHash('sha256').update(secret).digest('hex');
+  private async hashClientSecret(secret: string): Promise<string> {
+    return await hash(secret, {
+      type: argon2i,
+      memoryCost: 16384,
+      timeCost: 4,
+      parallelism: 3,
+    });
   }
 }

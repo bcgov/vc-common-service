@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class UpdateConnectorCredentialDto {
   @IsOptional()
@@ -6,8 +6,11 @@ export class UpdateConnectorCredentialDto {
   public endpointUrl?: string;
 
   @IsOptional()
+  @IsBoolean()
   public active?: boolean;
 
   @IsOptional()
+  @IsInt()
+  @Min(1)
   public keyVersion?: number;
 }

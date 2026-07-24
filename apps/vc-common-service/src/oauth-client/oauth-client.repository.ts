@@ -11,6 +11,13 @@ export class OAuthClientRepository {
     private readonly repository: Repository<OAuthClient>,
   ) {}
 
+  public async findById(id: string): Promise<OAuthClient | null> {
+    return this.repository.findOne({
+      where: { id },
+      relations: { tenant: true },
+    });
+  }
+
   public async findByClientId(clientId: string): Promise<OAuthClient | null> {
     return await this.repository.findOne({
       where: { clientId },

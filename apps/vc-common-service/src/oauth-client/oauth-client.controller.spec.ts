@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 
 import { CreateOAuthClientDto } from './dto/create-oauth-client.dto';
+import { OAuthClientResponseDto } from './dto/oauth-client-response.dto';
 import { OAuthClientController } from './oauth-client.controller';
 import { OAuthClient } from './oauth-client.entity';
 import { OAuthClientService } from './oauth-client.service';
@@ -24,7 +25,21 @@ describe('OAuthClientController', () => {
     grantTypes: ['client_credentials'],
     createdBy: '123e4567-e89b-12d3-a456-426614174002',
     createdAt: new Date(),
+    revokedAt: undefined,
     tenant: undefined as any,
+  };
+
+  const mockResponseDto: OAuthClientResponseDto = {
+    id: mockOAuthClient.id,
+    tenantId: mockOAuthClient.tenantId,
+    clientId: mockOAuthClient.clientId,
+    name: mockOAuthClient.name,
+    scopes: mockOAuthClient.scopes,
+    redirectUris: mockOAuthClient.redirectUris,
+    grantTypes: mockOAuthClient.grantTypes,
+    createdBy: mockOAuthClient.createdBy,
+    createdAt: mockOAuthClient.createdAt,
+    revokedAt: mockOAuthClient.revokedAt,
   };
 
   beforeEach(async () => {
@@ -77,7 +92,10 @@ describe('OAuthClientController', () => {
       const response = await controller.createClient(dto);
 
       expect(mockCreateClient).toHaveBeenCalledWith(dto);
-      expect(response).toEqual(result);
+      expect(response).toEqual({
+        client: mockResponseDto,
+        clientSecret: 'secret_abc123',
+      });
     });
   });
 
@@ -88,7 +106,7 @@ describe('OAuthClientController', () => {
       const result = await controller.findByClientId(mockOAuthClient.clientId);
 
       expect(mockFindByClientId).toHaveBeenCalledWith(mockOAuthClient.clientId);
-      expect(result).toEqual(mockOAuthClient);
+      expect(result).toEqual(mockResponseDto);
     });
   });
 
@@ -99,7 +117,7 @@ describe('OAuthClientController', () => {
       const result = await controller.findByTenant(mockOAuthClient.tenantId);
 
       expect(mockFindByTenant).toHaveBeenCalledWith(mockOAuthClient.tenantId);
-      expect(result).toEqual([mockOAuthClient]);
+      expect(result).toEqual([mockResponseDto]);
     });
   });
 

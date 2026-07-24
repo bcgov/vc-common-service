@@ -35,12 +35,13 @@ const mockAppModules = (
   const mocks: Record<string, Record<string, jest.Mock>> = {};
 
   modulePaths.forEach((modulePath) => {
-    const moduleNameWithExtension = modulePath.split('/').pop() || '';
-    const moduleName = moduleNameWithExtension.replace('.ts', '');
-    const exportName = moduleName
-      .split('-')
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join('');
+    const fileName = modulePath.split('/').pop() || '';
+    const baseName = fileName.replace(/\.module(\.ts)?$/, '');
+    const exportName =
+      baseName
+        .split('-')
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join('') + 'Module';
 
     mocks[modulePath] = {
       [exportName]: jest.fn(),
@@ -67,7 +68,8 @@ Object.entries(modulesMock).forEach(([modulePath, moduleExport]) => {
   jest.mock(modulePath, () => moduleExport);
 });
 
-import { SwaggerService } from './swagger.service';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { SwaggerService } = require('./swagger.service');
 
 describe('SwaggerService', () => {
   let mockGetHttpAdapter: jest.Mock;

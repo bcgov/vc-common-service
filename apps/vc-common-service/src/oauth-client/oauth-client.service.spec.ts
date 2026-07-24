@@ -1,5 +1,3 @@
-import { createHash } from 'crypto';
-
 import { NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 
@@ -8,8 +6,16 @@ import { OAuthClient } from './oauth-client.entity';
 import { OAuthClientRepository } from './oauth-client.repository';
 import { OAuthClientService } from './oauth-client.service';
 
+// Mock argon2 before importing service
+jest.mock('argon2', () => ({
+  hash: jest.fn().mockResolvedValue('hashed_secret'),
+  verify: jest.fn(),
+  argon2i: 'argon2i',
+}));
+
 describe('OAuthClientService', () => {
   let service: OAuthClientService;
+  let mockFindById: jest.Mock;
   let mockFindByClientId: jest.Mock;
   let mockFindByTenant: jest.Mock;
   let mockCreate: jest.Mock;
@@ -31,6 +37,7 @@ describe('OAuthClientService', () => {
   };
 
   beforeEach(async () => {
+    mockFindById = jest.fn();
     mockFindByClientId = jest.fn();
     mockFindByTenant = jest.fn();
     mockCreate = jest.fn();
@@ -41,6 +48,7 @@ describe('OAuthClientService', () => {
     };
 
     const mockOAuthClientRepository = {
+      findById: mockFindById,
       findByClientId: mockFindByClientId,
       findByTenant: mockFindByTenant,
       create: mockCreate,
@@ -118,17 +126,17 @@ describe('OAuthClientService', () => {
 
   describe('revokeClient', () => {
     it('should revoke an OAuth client', async () => {
-      mockFindByClientId.mockResolvedValue(mockOAuthClient);
+      mockFindById.mockResolvedValue(mockOAuthClient);
       mockRevoke.mockResolvedValue(undefined);
 
       await service.revokeClient(mockOAuthClient.id);
 
-      expect(mockFindByClientId).toHaveBeenCalledWith(mockOAuthClient.id);
+      expect(mockFindById).toHaveBeenCalledWith(mockOAuthClient.id);
       expect(mockRevoke).toHaveBeenCalledWith(mockOAuthClient.id);
     });
 
     it('should throw NotFoundException if client not found', async () => {
-      mockFindByClientId.mockResolvedValue(null);
+      mockFindById.mockResolvedValue(null);
 
       await expect(service.revokeClient('nonexistent')).rejects.toThrow(
         NotFoundException,
@@ -139,17 +147,16 @@ describe('OAuthClientService', () => {
   describe('verifyClientSecret', () => {
     it('should verify a valid client secret', async () => {
       const clientSecret = 'test_secret_123';
-      const secretHash = createHash('sha256')
-        .update(clientSecret)
-        .digest('hex');
-
       const clientWithHash: OAuthClient = {
         ...mockOAuthClient,
-        clientSecretHash: secretHash,
+        clientSecretHash: 'hashed_secret',
         revokedAt: undefined,
       };
 
       mockFindByClientId.mockResolvedValue(clientWithHash);
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      (require('argon2').verify as jest.Mock).mockResolvedValue(true);
 
       const result = await service.verifyClientSecret(
         mockOAuthClient.clientId,
@@ -161,6 +168,16 @@ describe('OAuthClientService', () => {
 
     it('should return false for invalid secret', async () => {
       mockFindByClientId.mockResolvedValue(mockOAuthClient);
+      const clientWithHash: OAuthClient = {
+        ...mockOAuthClient,
+        clientSecretHash: 'hashed_secret',
+        revokedAt: undefined,
+      };
+
+      mockFindByClientId.mockResolvedValue(clientWithHash);
+
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      (require('argon2').verify as jest.Mock).mockResolvedValue(false);
 
       const result = await service.verifyClientSecret(
         mockOAuthClient.clientId,
@@ -173,6 +190,7 @@ describe('OAuthClientService', () => {
     it('should return false for revoked client', async () => {
       const revokedClient: OAuthClient = {
         ...mockOAuthClient,
+        clientSecretHash: 'hashed_secret',
         revokedAt: new Date(),
       };
 
