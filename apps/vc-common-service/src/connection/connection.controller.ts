@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  ParseEnumPipe,
 } from '@nestjs/common';
 import {
   ApiCreatedResponse,
@@ -73,7 +74,8 @@ export class ConnectionController {
   @ApiNotFoundResponse({ description: 'Tenant not found' })
   public async findByTenantId(
     @Param('tenantId', ParseUUIDPipe) tenantId: string,
-    @Query('state') state?: ConnectionState,
+    @Query('state', new ParseEnumPipe(ConnectionState, { optional: true }))
+    state?: ConnectionState,
   ): Promise<Connection[]> {
     if (state) {
       return await this.connectionService.findByTenantIdAndState(

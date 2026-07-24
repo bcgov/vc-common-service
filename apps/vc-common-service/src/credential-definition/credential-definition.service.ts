@@ -88,18 +88,7 @@ export class CredentialDefinitionService {
     if (dto.name !== undefined) {
       credentialDefinition.name = dto.name;
     }
-    if (dto.format !== undefined) {
-      credentialDefinition.format = dto.format;
-    }
-    if (dto.schemaDefinition !== undefined) {
-      credentialDefinition.schemaDefinition = dto.schemaDefinition;
-    }
-    if (dto.externalId !== undefined) {
-      credentialDefinition.externalId = dto.externalId;
-    }
-    if (dto.connectorType !== undefined) {
-      credentialDefinition.connectorType = dto.connectorType;
-    }
+
     if (dto.metadata !== undefined) {
       credentialDefinition.metadata = dto.metadata;
     }

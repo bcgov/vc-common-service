@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 
 import { CreateTenantUserDto } from './dto/create-tenant-user.dto';
+import { UpdateTenantUserDto } from './dto/update-tenant-user.dto';
 import { TenantUser } from './tenant-user.entity';
 import { TenantUserRepository } from './tenant-user.repository';
 
@@ -57,11 +58,25 @@ export class TenantUserService {
 
   public async update(
     id: string,
-    dto: Partial<CreateTenantUserDto>,
+    dto: UpdateTenantUserDto,
   ): Promise<TenantUser> {
     const tenantUser = await this.findById(id);
 
-    Object.assign(tenantUser, dto);
+    if (dto.email !== undefined) {
+      tenantUser.email = dto.email;
+    }
+
+    if (dto.displayName !== undefined) {
+      tenantUser.displayName = dto.displayName;
+    }
+
+    if (dto.role !== undefined) {
+      tenantUser.role = dto.role;
+    }
+
+    if (dto.status !== undefined) {
+      tenantUser.status = dto.status;
+    }
 
     return await this.tenantUserRepository.update(tenantUser);
   }
